@@ -2,13 +2,11 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Tag } from 'antd';
 import {
-  RadarChartOutlined,
-  LineChartOutlined,
-  AppstoreOutlined,
-  ToolOutlined,
+  UserOutlined,
   CheckOutlined,
   RightOutlined,
 } from '@ant-design/icons';
+import MatrixLogoIcon from '@/components/MatrixLogoIcon';
 import { useStore } from '@/store/useStore';
 import type { Role } from '@/store/useStore';
 
@@ -27,7 +25,7 @@ const roles: RoleDef[] = [
     key: 'business',
     label: '商务经理',
     subtitle: 'Business Manager',
-    icon: <LineChartOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '频谱可视化', '报表导出'],
     color: '#3b82f6',
     level: 'L1',
@@ -36,7 +34,7 @@ const roles: RoleDef[] = [
     key: 'product',
     label: '产品经理',
     subtitle: 'Product Manager',
-    icon: <AppstoreOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '频谱可视化', '报表导出'],
     color: '#10b981',
     level: 'L2',
@@ -45,7 +43,7 @@ const roles: RoleDef[] = [
     key: 'project_manager',
     label: '项目经理',
     subtitle: 'Project Manager',
-    icon: <AppstoreOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '频谱可视化', '报表导出'],
     color: '#06b6d4',
     level: 'L2',
@@ -54,7 +52,7 @@ const roles: RoleDef[] = [
     key: 'delivery',
     label: '交付经理',
     subtitle: 'Delivery Manager',
-    icon: <ToolOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '频谱可视化', '占用管理', '报表导出'],
     color: '#f59e0b',
     level: 'L3',
@@ -63,7 +61,7 @@ const roles: RoleDef[] = [
     key: 'satellite_engineer',
     label: '卫星通信工程师',
     subtitle: 'Satellite Communication Engineer',
-    icon: <ToolOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '频谱可视化', '占用管理', '报表导出'],
     color: '#8b5cf6',
     level: 'L3',
@@ -109,7 +107,7 @@ export default function RoleSelect() {
           gap: 10,
         }}
       >
-        <RadarChartOutlined style={{ color: '#3b82f6', fontSize: 18 }} />
+        <MatrixLogoIcon size={18} />
         <span style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 14, letterSpacing: 0.5 }}>
           射频矩阵管理系统
         </span>
@@ -158,44 +156,84 @@ export default function RoleSelect() {
         }}
       >
         {/* 系统标题 */}
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+          {/* 大 Logo + 光晕 */}
           <div
             style={{
-              display: 'inline-block',
-              padding: '3px 14px',
-              background: 'rgba(37, 99, 235, 0.12)',
-              border: '1px solid rgba(37, 99, 235, 0.3)',
-              borderRadius: 2,
-              color: '#60a5fa',
-              fontSize: 11,
-              fontFamily: 'monospace',
-              letterSpacing: 3,
+              position: 'relative',
+              width: 72,
+              height: 72,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               marginBottom: 20,
             }}
           >
-            SATELLITE RF MATRIX MANAGEMENT SYSTEM
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(59,130,246,0.18) 0%, transparent 70%)',
+                animation: 'none',
+              }}
+            />
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                background: 'rgba(14,30,54,0.9)',
+                border: '1px solid rgba(37,99,235,0.35)',
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 0 28px rgba(59,130,246,0.2), inset 0 1px 0 rgba(255,255,255,0.04)',
+              }}
+            >
+              <MatrixLogoIcon size={40} />
+            </div>
           </div>
+
+          {/* 中文主标题 */}
           <div
             style={{
-              fontSize: 32,
+              fontSize: 34,
               fontWeight: 700,
               color: '#e2e8f0',
-              letterSpacing: 4,
-              lineHeight: 1.2,
+              letterSpacing: 6,
+              lineHeight: 1.15,
             }}
           >
             射频矩阵管理系统
           </div>
+
+          {/* 英文副标题 */}
           <div
             style={{
-              marginTop: 12,
-              color: '#4a6a8a',
-              fontSize: 13,
-              letterSpacing: 2,
+              marginTop: 14,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
             }}
           >
-            请选择您的角色身份以进入系统
+            <div style={{ width: 40, height: 1, background: 'linear-gradient(to left, #2563eb88, transparent)' }} />
+            <span
+              style={{
+                color: '#3b82f6',
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: 4,
+                fontFamily: "'Courier New', 'Consolas', monospace",
+                textTransform: 'uppercase',
+                opacity: 0.85,
+              }}
+            >
+              RF · Matrix · Management
+            </span>
+            <div style={{ width: 40, height: 1, background: 'linear-gradient(to right, #2563eb88, transparent)' }} />
           </div>
+
         </div>
 
         {/* 分隔线 */}

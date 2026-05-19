@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { Layout, Menu, Tag, Button, Select } from 'antd';
 import {
-  RadarChartOutlined,
   AppstoreOutlined,
   SearchOutlined,
   ToolOutlined,
   FileExcelOutlined,
   LogoutOutlined,
 } from '@ant-design/icons';
+import MatrixLogoIcon from '@/components/MatrixLogoIcon';
 import { useStore } from '@/store/useStore';
 import { querySatellites } from '@/db/queries';
 import type { Satellite } from '@/types';
@@ -17,9 +17,11 @@ import type { Role } from '@/store/useStore';
 const { Sider, Header, Content } = Layout;
 
 const roleLabels: Record<Role, { label: string; color: string }> = {
-  business: { label: '商务经理', color: 'blue' },
-  product:  { label: '产品经理', color: 'green' },
-  delivery: { label: '交付经理', color: 'orange' },
+  business:           { label: '商务经理',     color: 'blue' },
+  product:            { label: '产品经理',     color: 'green' },
+  project_manager:    { label: '项目经理',     color: 'cyan' },
+  delivery:           { label: '交付经理',     color: 'orange' },
+  satellite_engineer: { label: '卫星通信工程师', color: 'purple' },
 };
 
 export default function AppLayout() {
@@ -46,7 +48,7 @@ export default function AppLayout() {
   const menuItems = [
     { key: '/dashboard', icon: <AppstoreOutlined />, label: '工作台' },
     { key: '/query',     icon: <SearchOutlined />,   label: '资源查询' },
-    ...(role === 'delivery'
+    ...(role === 'delivery' || role === 'satellite_engineer'
       ? [{ key: '/occupation', icon: <ToolOutlined />, label: '占用管理' }]
       : []),
     { key: '/report', icon: <FileExcelOutlined />, label: '报表导出' },
@@ -83,7 +85,7 @@ export default function AppLayout() {
             flexShrink: 0,
           }}
         >
-          <RadarChartOutlined style={{ color: '#3b82f6', fontSize: 22 }} />
+          <MatrixLogoIcon size={22} />
           <div>
             <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 13, lineHeight: '18px' }}>
               射频矩阵管理系统
