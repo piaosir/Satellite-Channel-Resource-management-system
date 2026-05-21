@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import MatrixLogoIcon from '@/components/MatrixLogoIcon';
 import { useStore } from '@/store/useStore';
-import { querySatellites } from '@/db/queries';
+import { fetchSatellites } from '@/api';
 import type { Satellite } from '@/types';
 import type { Role } from '@/store/useStore';
 
@@ -27,16 +27,16 @@ const roleLabels: Record<Role, { label: string; color: string }> = {
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { db, role, selectedSatelliteId, setSatellite } = useStore();
+  const { role, selectedSatelliteId, setSatellite } = useStore();
   const [satellites, setSatellites] = useState<Satellite[]>([]);
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
-    if (!db) return;
-    const list = querySatellites(db);
-    setSatellites(list);
-    if (!selectedSatelliteId && list.length > 0) setSatellite(list[0].id);
-  }, [db, selectedSatelliteId, setSatellite]);
+    fetchSatellites().then((list) => {
+      setSatellites(list);
+      if (!selectedSatelliteId && list.length > 0) setSatellite(list[0].id);
+    }).catch(console.error);
+  }, [selectedSatelliteId, setSatellite]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);

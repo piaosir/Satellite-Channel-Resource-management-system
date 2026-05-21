@@ -28,7 +28,8 @@ export function queryTransponders(db: Database, satelliteId: number): Transponde
       sw.switchStatus,
       sw.switchType,
       sw.twtValidStatusCode,
-      SUBSTR(sw.inputChannelCodeShort, 2)            AS transponderName,
+      MIN(ci_rx.id)                                  AS inputChannelId,
+      MIN(ci_rx.commonName)                          AS transponderName,
       MIN(ci_rx.channelStartFreq)                    AS rxStartFreq,
       MIN(ci_rx.channelEndFreq)                      AS rxEndFreq,
       MIN(ci_rx.channelBandwidth)                    AS channelBw,
@@ -43,6 +44,7 @@ export function queryTransponders(db: Database, satelliteId: number): Transponde
       MIN(fcg.txRxType)                              AS txRxType,
       m.id                                           AS matrixId,
       m.matrixCode,
+      m.remark                                       AS matrixRemark,
       m.satelliteId
     FROM matrix_switch_status sw
     JOIN channel_info ci_rx  ON ci_rx.channelCodeShort  = sw.inputChannelCodeShort
@@ -53,7 +55,7 @@ export function queryTransponders(db: Database, satelliteId: number): Transponde
     WHERE m.satelliteId = ${satelliteId}
     GROUP BY sw.id, sw.switchCode, sw.switchStatus, sw.switchType,
              sw.twtValidStatusCode, sw.inputChannelCodeShort,
-             m.id, m.matrixCode, m.satelliteId
+             m.id, m.matrixCode, m.remark, m.satelliteId
     ORDER BY MIN(fcg.band), sw.inputPortSeq
   `;
   return toObjects<Transponder>(db.exec(sql));
@@ -92,8 +94,7 @@ export interface OccupationFull extends Occupation {
   // 矩阵
   satelliteCode: string;
   areaNo: number;
-  groupNo: number;
-  // 上行通道组
+  groupNo: number;  matrixRemark: string | null;  // 上行通道组
   band: string;
   polarization: string | null;
   txRxType: string;
@@ -131,7 +132,8 @@ export function queryAllOccupations(
       occ.occupationStatus,
       occ.occupationStartTimeMs,
       occ.occupationEndTimeMs,
-      SUBSTR(sw.inputChannelCodeShort, 2)                                      AS transponderName,
+      ci_rx.commonName                                                         AS transponderName,
+      ci_rx.id                                                                 AS inputChannelId,
       sw.matrixCode,
       sw.inputChannelCodeShort,
       sw.outputChannelCodeShort,
@@ -141,6 +143,7 @@ export function queryAllOccupations(
       m.satelliteCode,
       m.areaNo,
       m.groupNo,
+      m.remark                                                                 AS matrixRemark,
       fcg.band,
       fcg.polarization,
       fcg.txRxType,
@@ -233,6 +236,11 @@ export function updateOccupation(
 
 export function deleteOccupation(db: Database, id: number): void {
   db.run('DELETE FROM occupation_realtime_status WHERE id=?', [id]);
+  saveDB(db);
+}
+
+export function updateChannelCommonName(db: Database, channelId: number, commonName: string): void {
+  db.run('UPDATE channel_info SET commonName=? WHERE id=?', [commonName, channelId]);
   saveDB(db);
 }
 

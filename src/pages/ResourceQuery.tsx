@@ -4,16 +4,17 @@ import FilterBar from '@/components/FilterBar';
 import TransponderTable from '@/components/TransponderTable';
 import OccupationDrawer from '@/components/OccupationDrawer';
 import { useStore } from '@/store/useStore';
-import { queryTransponders, queryOccupations } from '@/db/queries';
-import type { Transponder, Occupation } from '@/types';
+import { fetchTransponders, fetchFrequencyBlocks } from '@/api';
+import type { Transponder, FrequencyBlock } from '@/types';
 import type { FilterValues } from '@/components/FilterBar';
+import { fmtPolarization } from '@/utils/freqCalc';
 
 export default function ResourceQuery() {
   const navigate = useNavigate();
-  const { db, role, selectedSatelliteId } = useStore();
+  const { role, selectedSatelliteId } = useStore();
   const [all, setAll] = useState<Transponder[]>([]);
 
-  // 当前卫星实际存在的频段、极化、转发器列表（用于 FilterBar 动态选项）
+  // 当前卫星实际存在的频段、极化、通道列表（用于 FilterBar 动态选项）
   const availableBands = useMemo(
     () => [...new Set(all.map((t) => t.band).filter(Boolean))].sort() as string[],
     [all],
@@ -25,11 +26,11 @@ export default function ResourceQuery() {
   const availableTransponders = useMemo(
     () => all.map((t) => ({
       switchId: t.switchId,
-      label: `${t.transponderName}（${t.band}${t.polarization ? ' ' + t.polarization : ''}）`,
+      label: `${t.transponderName}（${t.band}${t.polarization ? ' ' + fmtPolarization(t.polarization) : ''}）`,
     })),
     [all],
   );
-  const [occMap, setOccMap] = useState<Record<number, Occupation[]>>({});
+  const [occMap, setOccMap] = useState<Record<number, FrequencyBlock[]>>({});
   const [filters, setFilters] = useState<FilterValues>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selected, setSelected] = useState<Transponder | null>(null);
@@ -39,28 +40,29 @@ export default function ResourceQuery() {
     if (role === null) navigate('/', { replace: true });
   }, [role, navigate]);
 
-  // 加载转发器列表
-  useEffect(() => {
-    if (!db || !selectedSatelliteId) return;
-    const list = queryTransponders(db, selectedSatelliteId);
-    setAll(list);
-  }, [db, selectedSatelliteId]);
+  // 加载通道列表
+  const reloadTransponders = useCallback(() => {
+    if (!selectedSatelliteId) return;
+    fetchTransponders(selectedSatelliteId).then(setAll).catch(console.error);
+  }, [selectedSatelliteId]);
 
-  // 加载所有转发器的占用数据（当卫星/转发器列表变化时重载）
+  useEffect(() => {
+    reloadTransponders();
+  }, [reloadTransponders]);
+
+  // 加载所有通道的占用数据（当卫星/通道列表变化时重载）
   const reloadOccMap = useCallback(() => {
-    if (!db || all.length === 0) return;
-    const map: Record<number, Occupation[]> = {};
-    for (const t of all) {
-      map[t.switchId] = queryOccupations(db, t.switchId);
-    }
-    setOccMap(map);
-  }, [db, all]);
+    if (all.length === 0) return;
+    Promise.all(all.map((t) => fetchFrequencyBlocks(t.switchId).then((list) => [t.switchId, list] as const)))
+      .then((entries) => setOccMap(Object.fromEntries(entries)))
+      .catch(console.error);
+  }, [all]);
 
   useEffect(() => {
     reloadOccMap();
   }, [reloadOccMap]);
 
-  // 前端筛选（转发器 / 频段 / 极化 / 开关状态 / 占用状态）
+  // 前端筛选（通道 / 频段 / 极化 / 开关状态 / 占用状态）
   const filtered = useMemo(() => {
     return all.filter((t) => {
       if (filters.transponderSwitchId !== undefined && t.switchId !== filters.transponderSwitchId) return false;
@@ -69,7 +71,7 @@ export default function ResourceQuery() {
       if (filters.switchStatus !== undefined && t.switchStatus !== filters.switchStatus)           return false;
       if (filters.occStatus) {
         const occs = occMap[t.switchId] ?? [];
-        if (!occs.some((o) => o.occupationStatus === filters.occStatus)) return false;
+        if (!occs.some((o) => o.partitionStatus === filters.occStatus)) return false;
       }
       return true;
     });
@@ -90,7 +92,7 @@ export default function ResourceQuery() {
       />
       <div style={{ padding: '16px 24px' }}>
         <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>
-          当前卫星共 <b style={{ color: '#e2e8f0' }}>{all.length}</b> 个转发器
+          当前卫星共 <b style={{ color: '#e2e8f0' }}>{all.length}</b> 个通道
           {filtered.length !== all.length && `，筛选后 ${filtered.length} 个`}
           　点击行查看频谱详情
         </div>
@@ -102,6 +104,7 @@ export default function ResourceQuery() {
         transponders={all}
         onClose={() => setDrawerOpen(false)}
         onOccChange={reloadOccMap}
+        onTransponderChange={reloadTransponders}
       />
     </div>
   );

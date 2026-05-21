@@ -1,26 +1,29 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Drawer, Descriptions, Tag, Table, Badge,
-  Button, Space, Popconfirm, Tooltip, message,
+  Button, Space, Popconfirm, Tooltip, message, Input,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined,
-  InfoCircleOutlined,
+  InfoCircleOutlined, CheckOutlined, CloseOutlined,
 } from '@ant-design/icons';
 import { useStore } from '@/store/useStore';
-import { queryOccupations, deleteOccupation } from '@/db/queries';
+import { fetchFrequencyBlocks, deleteFrequencyBlock, updateChannelCommonName } from '@/api';
 import { PERMISSIONS } from '@/utils/roleGuard';
 import OccupationForm from './OccupationForm';
 import SpectrumChart from './SpectrumChart';
-import type { Transponder, Occupation } from '@/types';
-import { calcOccFreq, fmtFreq } from '@/utils/freqCalc';
+import type { Transponder, FrequencyBlock } from '@/types';
+import { calcOccFreq, fmtFreq, fmtPolarization } from '@/utils/freqCalc';
 
-const STATUS_COLOR: Record<string, string> = { 占用: 'blue', 空闲: 'default', 干扰: 'error' };
-
-function msToStr(ms: number | null): string {
-  if (ms == null) return '长期';
-  return new Date(ms).toLocaleString('zh-CN', { hour12: false });
+const STATUS_COLOR: Record<string, string> = { P: 'blue', R: 'default', '禁用': 'error' };
+function occStatusLabel(occ: FrequencyBlock) {
+  if (occ.usageType === '禁用') return '禁用';
+  return occ.partitionStatus === 'P' ? occ.usageType ?? '划分' : '空闲';
+}
+function occStatusColor(occ: FrequencyBlock) {
+  if (occ.usageType === '禁用') return 'error';
+  return occ.partitionStatus === 'P' ? 'blue' : 'default';
 }
 
 interface OccupationDrawerProps {
@@ -31,10 +34,12 @@ interface OccupationDrawerProps {
   onClose: () => void;
   /** 占用数据发生变更后的回调（用于通知父页面刷新 occMap） */
   onOccChange?: () => void;
+  /** 通道名称修改后的回调（用于通知父页面刷新转发器列表） */
+  onTransponderChange?: () => void;
 }
 
 export default function OccupationDrawer({
-  open, transponder, transponders = [], onClose, onOccChange,
+  open, transponder, transponders = [], onClose, onOccChange, onTransponderChange,
 }: OccupationDrawerProps) {
   const { db, role } = useStore();
   const [occs, setOccs] = useState<Occupation[]>([]);
@@ -43,8 +48,14 @@ export default function OccupationDrawer({
   const [formOpen, setFormOpen]       = useState(false);
   const [editRecord, setEditRecord]   = useState<Occupation | null>(null);
 
+  // 通道名称编辑状态
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput]     = useState('');
+  const [savingName, setSavingName]   = useState(false);
+
   const canManage = role != null && PERMISSIONS.canManageOccupation(role);
   const canDelete = role != null && PERMISSIONS.canDeleteOccupation(role);
+  const canEditName = role != null && PERMISSIONS.canEditChannelName(role);
 
   const reload = useCallback(() => {
     if (!db || !transponder) return;
@@ -53,7 +64,12 @@ export default function OccupationDrawer({
 
   useEffect(() => {
     if (open) reload();
+    else setEditingName(false);
   }, [open, reload]);
+
+  useEffect(() => {
+    setEditingName(false);
+  }, [transponder?.switchId]);
 
   function handleFormSuccess() {
     reload();
@@ -67,6 +83,21 @@ export default function OccupationDrawer({
     reload();
     onOccChange?.();
     message.success('已删除');
+  }
+
+  async function handleSaveName() {
+    if (!transponder || !nameInput.trim()) return;
+    setSavingName(true);
+    try {
+      await updateChannelCommonName(transponder.inputChannelId, nameInput.trim());
+      message.success('通道名称已更新');
+      setEditingName(false);
+      onTransponderChange?.();
+    } catch (e) {
+      message.error((e as Error).message ?? '保存失败');
+    } finally {
+      setSavingName(false);
+    }
   }
 
   function openCreate() {
@@ -150,7 +181,7 @@ export default function OccupationDrawer({
       ? [{
           title: '操作',
           width: 80,
-          render: (_: unknown, occ: Occupation) => (
+          render: (_: unknown, occ: FrequencyBlock) => (
             <Space size={2}>
               {canManage && (
                 <Tooltip title="编辑">
@@ -176,7 +207,7 @@ export default function OccupationDrawer({
               )}
             </Space>
           ),
-        } as ColumnsType<Occupation>[number]]
+        } as ColumnsType<FrequencyBlock>[number]]
       : []),
   ];
 
@@ -185,7 +216,7 @@ export default function OccupationDrawer({
       <Drawer
         title={
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>{transponder ? `转发器详情 — ${transponder.transponderName}` : '转发器详情'}</span>
+            <span>{transponder ? `通道详情 — ${transponder.transponderName}` : '通道详情'}</span>
             {canManage && transponder && (
               <Button
                 type="primary"
@@ -209,7 +240,7 @@ export default function OccupationDrawer({
       >
         {transponder && (
           <>
-            {/* ── 转发器基本信息 ── */}
+            {/* ── 通道基本信息 ── */}
             <Descriptions
               size="small"
               column={2}
@@ -230,7 +261,7 @@ export default function OccupationDrawer({
                   {transponder.band}
                 </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="极化">{transponder.polarization ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="极化">{fmtPolarization(transponder.polarization)}</Descriptions.Item>
               <Descriptions.Item label="天线">{transponder.antennaName ?? '—'}</Descriptions.Item>
               <Descriptions.Item label="上行频率">
                 {transponder.rxStartFreq != null
@@ -246,6 +277,42 @@ export default function OccupationDrawer({
                 {transponder.channelBw != null ? `${transponder.channelBw} MHz` : '—'}
               </Descriptions.Item>
               <Descriptions.Item label="TWT">{transponder.twtValidStatusCode ?? '—'}</Descriptions.Item>
+              <Descriptions.Item label="通道名称" span={2}>
+                {editingName ? (
+                  <Space size={4}>
+                    <Input
+                      size="small"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      onPressEnter={handleSaveName}
+                      style={{ width: 200 }}
+                      autoFocus
+                    />
+                    <Button
+                      type="text" size="small" icon={<CheckOutlined />}
+                      style={{ color: '#4ade80' }}
+                      loading={savingName}
+                      onClick={handleSaveName}
+                    />
+                    <Button
+                      type="text" size="small" icon={<CloseOutlined />}
+                      style={{ color: '#94a3b8' }}
+                      onClick={() => setEditingName(false)}
+                    />
+                  </Space>
+                ) : (
+                  <Space size={4}>
+                    <span>{transponder.transponderName}</span>
+                    {canEditName && (
+                      <Button
+                        type="text" size="small" icon={<EditOutlined />}
+                        style={{ color: '#60a5fa' }}
+                        onClick={() => { setNameInput(transponder.transponderName); setEditingName(true); }}
+                      />
+                    )}
+                  </Space>
+                )}
+              </Descriptions.Item>
             </Descriptions>
 
             {/* ── 占用统计条 ── */}
@@ -301,18 +368,20 @@ export default function OccupationDrawer({
 }
 
 // ── 占用统计条（带宽利用率摘要） ─────────────────────────────
-function OccSummaryBar({ occs, channelBw }: { occs: Occupation[]; channelBw: number | null }) {
+function OccSummaryBar({ occs, channelBw }: { occs: FrequencyBlock[]; channelBw: number | null }) {
   if (channelBw == null) return null;
 
   const totalOcc = occs.reduce((s, o) => s + o.occupiedBandwidth, 0);
   const usedRatio = Math.min(1, totalOcc / channelBw);
 
+  const STATUS_FILL: Record<string, string> = { P: '#1677ff', R: '#52c41a', '禁用': '#ff4d4f' };
+
   const byStatus = occs.reduce<Record<string, number>>((acc, o) => {
-    acc[o.occupationStatus] = (acc[o.occupationStatus] ?? 0) + o.occupiedBandwidth;
+    const key = o.usageType === '禁用' ? '禁用' : o.partitionStatus;
+    acc[key] = (acc[key] ?? 0) + o.occupiedBandwidth;
     return acc;
   }, {});
-
-  const STATUS_FILL: Record<string, string> = { 占用: '#1677ff', 空闲: '#52c41a', 干扰: '#ff4d4f' };
+  const labelMap: Record<string, string> = { P: '划分', R: '空闲', '禁用': '禁用' };
 
   return (
     <div style={{
@@ -333,13 +402,14 @@ function OccSummaryBar({ occs, channelBw }: { occs: Occupation[]; channelBw: num
         {occs.map((o, i) => {
           const left  = Math.max(0, Math.min(100, (o.frequencyOffset / channelBw) * 100));
           const width = Math.max(1, Math.min(100 - left, (o.occupiedBandwidth / channelBw) * 100));
+          const key   = o.usageType === '禁用' ? '禁用' : o.partitionStatus;
           return (
             <div key={i} style={{
               position: 'absolute',
               left: `${left}%`,
               width: `${width}%`,
               height: '100%',
-              background: STATUS_FILL[o.occupationStatus] ?? '#475569',
+              background: STATUS_FILL[key] ?? '#475569',
               opacity: 0.9,
             }} />
           );
@@ -347,10 +417,10 @@ function OccSummaryBar({ occs, channelBw }: { occs: Occupation[]; channelBw: num
       </div>
       {/* 图例 */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {Object.entries(byStatus).map(([status, bw]) => (
-          <span key={status} style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: STATUS_FILL[status] ?? '#475569', display: 'inline-block' }} />
-            {status}：{bw.toFixed(1)} MHz
+        {Object.entries(byStatus).map(([key, bw]) => (
+          <span key={key} style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: STATUS_FILL[key] ?? '#475569', display: 'inline-block' }} />
+            {labelMap[key] ?? key}：{bw.toFixed(1)} MHz
           </span>
         ))}
         {occs.length === 0 && (

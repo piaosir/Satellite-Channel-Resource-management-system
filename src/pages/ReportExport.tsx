@@ -5,7 +5,6 @@ import {
   Card,
   Checkbox,
   Col,
-  DatePicker,
   Row,
   Select,
   Space,
@@ -24,12 +23,13 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import ExcelJS from 'exceljs';
-import dayjs, { type Dayjs } from 'dayjs';
+import dayjs from 'dayjs';
 import { useStore } from '@/store/useStore';
-import { queryAllOccupations } from '@/db/queries';
-import type { OccupationFull } from '@/db/queries';
+import { fetchFrequencyBlocksBySatellite } from '@/api';
+import type { FrequencyBlockFull } from '@/types';
+import { fmtPolarization, fmtTxRxType, fmtPartitionStatus, fmtSwitchStatus } from '@/utils/freqCalc';
 
-type OccRow = OccupationFull;
+type OccRow = FrequencyBlockFull;
 
 interface FieldDef {
   key: keyof OccRow;
@@ -53,15 +53,15 @@ const ALL_FIELDS: FieldDef[] = [
   { key: 'rxActualEndFreq',       label: '上行实际终止频率 (MHz)', defaultChecked: true,  group: '实际频率' },
   { key: 'txActualStartFreq',     label: '下行实际起始频率 (MHz)', defaultChecked: true,  group: '实际频率' },
   { key: 'txActualEndFreq',       label: '下行实际终止频率 (MHz)', defaultChecked: true,  group: '实际频率' },
-  // ── 转发器/开关 ───────────────────────────────────────────
-  { key: 'transponderName',       label: '转发器名称',           defaultChecked: true,  group: '转发器/开关' },
-  { key: 'switchCode',            label: '开关编码',             defaultChecked: false, group: '转发器/开关' },
-  { key: 'switchId',              label: '开关ID',               defaultChecked: false, group: '转发器/开关' },
-  { key: 'switchStatus',          label: '开关状态',             defaultChecked: false, group: '转发器/开关' },
-  { key: 'switchType',            label: '开关类型',             defaultChecked: false, group: '转发器/开关' },
-  { key: 'twtValidStatusCode',    label: '有效TWT编码',          defaultChecked: false, group: '转发器/开关' },
-  { key: 'inputChannelCodeShort', label: '上行通道代码',         defaultChecked: false, group: '转发器/开关' },
-  { key: 'outputChannelCodeShort',label: '下行通道代码',         defaultChecked: false, group: '转发器/开关' },
+  // ── 通道/开关 ───────────────────────────────────────────────
+  { key: 'transponderName',       label: '通道名称',           defaultChecked: true,  group: '通道/开关' },
+  { key: 'switchCode',            label: '开关编码',             defaultChecked: false, group: '通道/开关' },
+  { key: 'switchId',              label: '开关ID',               defaultChecked: false, group: '通道/开关' },
+  { key: 'switchStatus',          label: '开关状态',             defaultChecked: false, group: '通道/开关' },
+  { key: 'switchType',            label: '开关类型',             defaultChecked: false, group: '通道/开关' },
+  { key: 'twtValidStatusCode',    label: '有效TWT编码',          defaultChecked: false, group: '通道/开关' },
+  { key: 'inputChannelCodeShort', label: '上行通道代码',         defaultChecked: false, group: '通道/开关' },
+  { key: 'outputChannelCodeShort',label: '下行通道代码',         defaultChecked: false, group: '通道/开关' },
   // ── 矩阵 ──────────────────────────────────────────────────
   { key: 'matrixCode',            label: '矩阵代码',             defaultChecked: false, group: '矩阵' },
   { key: 'satelliteCode',         label: '卫星代号',             defaultChecked: false, group: '矩阵' },
@@ -85,19 +85,20 @@ const ALL_FIELDS: FieldDef[] = [
 
 const FIELD_GROUPS = [...new Set(ALL_FIELDS.map((f) => f.group))];
 
-const STATUS_COLOR: Record<string, string> = { 占用: 'blue', 空闲: 'green', 干扰: 'red' };
+const STATUS_COLOR: Record<string, string> = { P: 'blue', R: 'green' };
 
 function fmtVal(key: string, value: unknown): string {
   if (value === null || value === undefined) return '-';
-  if ((key === 'occupationStartTimeMs' || key === 'occupationEndTimeMs') && typeof value === 'number') {
-    return dayjs(value).format('YYYY-MM-DD HH:mm:ss');
-  }
+  if (key === 'polarization' || key === 'txPolarization') return fmtPolarization(String(value));
+  if (key === 'txRxType') return fmtTxRxType(String(value));
+  if (key === 'partitionStatus' || key === 'occupationStatus') return fmtPartitionStatus(String(value));
+  if (key === 'switchStatus') return fmtSwitchStatus(Number(value));
   return String(value);
 }
 
 export default function ReportExport() {
   const navigate = useNavigate();
-  const { db, role, selectedSatelliteId } = useStore();
+  const { role, selectedSatelliteId } = useStore();
 
   // selectedFields 的顺序即为导出列顺序
   const [selectedFields, setSelectedFields] = useState<string[]>(
@@ -108,7 +109,13 @@ export default function ReportExport() {
   const [bandFilter,   setBandFilter]   = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [polarFilter,  setPolarFilter]  = useState<string[]>([]);
-  const [dateRange,    setDateRange]    = useState<[Dayjs | null, Dayjs | null]>([null, null]);
+
+  // 异步加载原始数据
+  const [rawData, setRawData] = useState<OccRow[]>([]);
+  useEffect(() => {
+    if (!selectedSatelliteId) { setRawData([]); return; }
+    fetchFrequencyBlocksBySatellite(selectedSatelliteId).then(setRawData).catch(console.error);
+  }, [selectedSatelliteId]);
 
   // 拖拽排序
   const [dragIdx,     setDragIdx]     = useState<number | null>(null);
@@ -117,11 +124,6 @@ export default function ReportExport() {
   useEffect(() => {
     if (role === null) navigate('/', { replace: true });
   }, [role, navigate]);
-
-  const rawData = useMemo<OccRow[]>(() => {
-    if (!db || !selectedSatelliteId) return [];
-    return queryAllOccupations(db, selectedSatelliteId);
-  }, [db, selectedSatelliteId]);
 
   const availableBands = useMemo(
     () => [...new Set(rawData.map((r) => r.band).filter(Boolean))].sort() as string[],
@@ -133,16 +135,13 @@ export default function ReportExport() {
   );
 
   const data = useMemo(() => {
-    const [start, end] = dateRange;
     return rawData.filter((row) => {
-      if (bandFilter.length > 0   && !bandFilter.includes(row.band))                    return false;
-      if (statusFilter.length > 0 && !statusFilter.includes(row.occupationStatus))      return false;
-      if (polarFilter.length > 0  && !polarFilter.includes(row.polarization ?? ''))     return false;
-      if (start && row.occupationStartTimeMs !== null && row.occupationStartTimeMs < start.startOf('day').valueOf()) return false;
-      if (end   && row.occupationStartTimeMs !== null && row.occupationStartTimeMs > end.endOf('day').valueOf())     return false;
+      if (bandFilter.length > 0   && !bandFilter.includes(row.band))               return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(row.partitionStatus))  return false;
+      if (polarFilter.length > 0  && !polarFilter.includes(row.polarization ?? '')) return false;
       return true;
     });
-  }, [rawData, bandFilter, statusFilter, polarFilter, dateRange]);
+  }, [rawData, bandFilter, statusFilter, polarFilter]);
 
   // 激活字段列表：顺序严格按 selectedFields 排列
   const activeFields = useMemo(
@@ -157,9 +156,9 @@ export default function ReportExport() {
         dataIndex: f.key,
         key: f.key,
         render: (val: unknown) => {
-          if (f.key === 'occupationStatus') {
+          if (f.key === 'partitionStatus') {
             const s = val as string;
-            return <Tag color={STATUS_COLOR[s] ?? 'default'}>{s ?? '-'}</Tag>;
+            return <Tag color={STATUS_COLOR[s] ?? 'default'}>{s === 'P' ? 'P划分' : s === 'R' ? 'R空闲' : (s ?? '-')}</Tag>;
           }
           return <span style={{ color: '#cbd5e1', fontSize: 12 }}>{fmtVal(f.key, val)}</span>;
         },
@@ -448,27 +447,15 @@ export default function ReportExport() {
                 <Select mode="multiple" allowClear style={{ width: '100%' }}
                   placeholder="全部状态" value={statusFilter} onChange={setStatusFilter}
                   options={[
-                    { value: '占用', label: '占用' },
-                    { value: '空闲', label: '空闲' },
-                    { value: '干扰', label: '干扰' },
+                    { value: 'P', label: 'P 划分（在用）' },
+                    { value: 'R', label: 'R 回收（空闲）' },
                   ]}
-                />
-              </Col>
-              <Col xs={24} sm={6}>
-                <div style={{ color: '#94a3b8', fontSize: 11, marginBottom: 3 }}>占用开始时间</div>
-                <DatePicker.RangePicker
-                  style={{ width: '100%' }}
-                  value={dateRange}
-                  onChange={(vals) => setDateRange(vals ? [vals[0], vals[1]] : [null, null])}
-                  placeholder={['开始日期', '结束日期']}
-                  allowClear
                 />
               </Col>
               <Col xs={24} style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button size="small" icon={<ReloadOutlined />} style={{ fontSize: 12 }}
                   onClick={() => {
-                    setBandFilter([]); setStatusFilter([]);
-                    setPolarFilter([]); setDateRange([null, null]);
+                    setBandFilter([]); setStatusFilter([]); setPolarFilter([]);
                   }}
                 >
                   重置筛选

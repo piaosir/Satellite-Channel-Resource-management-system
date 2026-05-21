@@ -1,34 +1,39 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  Modal, Form, Select, InputNumber, DatePicker,
+  Modal, Form, Select, InputNumber,
   Alert, Tag, Badge, Space, Divider,
 } from 'antd';
-import dayjs, { type Dayjs } from 'dayjs';
 import { useStore } from '@/store/useStore';
 import {
-  insertOccupation, updateOccupation,
-  queryOccupations, queryOccupationsForConflict,
-} from '@/db/queries';
-import { hasConflict } from '@/utils/freqCalc';
+  createFrequencyBlock, updateFrequencyBlock, fetchFrequencyBlocks,
+} from '@/api';
+import { hasConflict, fmtChannelLabel } from '@/utils/freqCalc';
 import SpectrumChart from './SpectrumChart';
-import type { Transponder, Occupation } from '@/types';
+import type { Transponder, FrequencyBlock } from '@/types';
 
 interface OccupationFormProps {
   open: boolean;
   onClose: () => void;
   onSuccess: () => void;
   /** null = 新建模式，non-null = 编辑模式 */
-  editRecord: Occupation | null;
+  editRecord: FrequencyBlock | null;
   /** 当前卫星下的所有转发器列表（新建时用于选择） */
   transponders: Transponder[];
   /** 新建时预选的转发器 */
   initTransponder?: Transponder | null;
 }
 
-const STATUS_OPTIONS = [
-  { value: '占用', label: '占用' },
-  { value: '空闲', label: '空闲' },
-  { value: '干扰', label: '干扰' },
+/** 划分状态选项 */
+const PARTITION_OPTIONS = [
+  { value: 'P', label: 'P — 划分（在用）' },
+  { value: 'R', label: 'R — 回收（空闲）' },
+];
+/** 用途分类选项 */
+const USAGE_TYPE_OPTIONS = [
+  { value: '出租', label: '出租' },
+  { value: '合作', label: '合作' },
+  { value: '自用', label: '自用' },
+  { value: '禁用', label: '禁用' },
 ];
 
 const DARK = {
@@ -50,7 +55,7 @@ function toOffsetBw(rxActualStart: number, rxActualEnd: number, rxChannelStart: 
 export default function OccupationForm({
   open, onClose, onSuccess, editRecord, transponders, initTransponder,
 }: OccupationFormProps) {
-  const { db } = useStore();
+  const { role } = useStore();
 
   // 表单字段：以起止频率为主，内部换算为 offset+bw 再存库
   const [form] = Form.useForm<{
@@ -59,9 +64,8 @@ export default function OccupationForm({
     rxActualEnd: number;
     txActualStart: number;
     txActualEnd: number;
-    occupationStatus: string;
-    occupationStartTimeMs: Dayjs | null;
-    occupationEndTimeMs: Dayjs | null;
+    partitionStatus: 'P' | 'R';
+    usageType: string | null;
   }>();
 
   // 防止 onValuesChange 在程序化 setFieldValue 时循环触发
@@ -70,7 +74,7 @@ export default function OccupationForm({
   const isEdit = editRecord !== null;
 
   const [activeSwitchId, setActiveSwitchId] = useState<number | null>(null);
-  const [existingOccs, setExistingOccs]     = useState<Occupation[]>([]);
+  const [existingOccs, setExistingOccs]     = useState<FrequencyBlock[]>([]);
   const [conflictMsg, setConflictMsg]       = useState<string | null>(null);
 
   // 实时预览用的 offset + bw（随表单值联动）
@@ -97,14 +101,13 @@ export default function OccupationForm({
       const txStart = tx0 + rec.frequencyOffset;
       const txEnd   = txStart + rec.occupiedBandwidth;
       form.setFieldsValue({
-        switchId:             rec.switchId,
-        rxActualStart:        rxStart,
-        rxActualEnd:          rxEnd,
-        txActualStart:        txStart,
-        txActualEnd:          txEnd,
-        occupationStatus:     rec.occupationStatus,
-        occupationStartTimeMs: rec.occupationStartTimeMs ? dayjs(rec.occupationStartTimeMs) : null,
-        occupationEndTimeMs:   rec.occupationEndTimeMs   ? dayjs(rec.occupationEndTimeMs)   : null,
+        switchId:        rec.switchId,
+        rxActualStart:   rxStart,
+        rxActualEnd:     rxEnd,
+        txActualStart:   txStart,
+        txActualEnd:     txEnd,
+        partitionStatus: rec.partitionStatus ?? 'P',
+        usageType:       rec.usageType ?? null,
       });
       setPreviewOffset(rec.frequencyOffset);
       setPreviewBw(rec.occupiedBandwidth);
@@ -113,8 +116,6 @@ export default function OccupationForm({
       const initId = initTransponder?.switchId ?? null;
       setActiveSwitchId(initId);
       if (initId != null) form.setFieldValue('switchId', initId);
-      // 新建时自动填入当前时间作为开始时间
-      form.setFieldValue('occupationStartTimeMs', dayjs());
       setPreviewOffset(null);
       setPreviewBw(null);
     }
@@ -122,10 +123,11 @@ export default function OccupationForm({
 
   // ── 选中转发器变化时加载占用列表 ────────────────────────────
   useEffect(() => {
-    if (!db || activeSwitchId == null) { setExistingOccs([]); return; }
-    const occs = queryOccupations(db, activeSwitchId);
-    setExistingOccs(isEdit ? occs.filter((o) => o.id !== editRecord!.id) : occs);
-  }, [db, activeSwitchId, open]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (activeSwitchId == null) { setExistingOccs([]); return; }
+    fetchFrequencyBlocks(activeSwitchId)
+      .then((list) => setExistingOccs(isEdit ? list.filter((o) => o.id !== editRecord!.id) : list))
+      .catch(console.error);
+  }, [activeSwitchId, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 表单值变化时同步另一侧频率并更新预览 ─────────────────────
   function handleValuesChange(changed: Record<string, unknown>) {
@@ -179,7 +181,7 @@ export default function OccupationForm({
 
   // ── 提交 ─────────────────────────────────────────────────────
   async function handleOk() {
-    if (!db) return;
+
     let vals: Awaited<ReturnType<typeof form.validateFields>>;
     try {
       vals = await form.validateFields();
@@ -191,7 +193,7 @@ export default function OccupationForm({
     const tp = transponders.find((t) => t.switchId === targetSwitchId);
 
     if (!tp?.rxStartFreq) {
-      setConflictMsg('该转发器暂无频率数据，无法确定偏移量');
+      setConflictMsg('该通道暂无频率数据，无法确定偏移量');
       return;
     }
 
@@ -214,36 +216,34 @@ export default function OccupationForm({
     }
 
     // 冲突检测
-    const existingForCheck = queryOccupationsForConflict(
-      db, targetSwitchId, isEdit ? editRecord!.id : undefined,
-    );
-    if (hasConflict(frequencyOffset, occupiedBandwidth, existingForCheck)) {
+    if (hasConflict(frequencyOffset, occupiedBandwidth, existingOccs)) {
       setConflictMsg('频率段与现有占用冲突，请调整起止频率');
       return;
     }
 
-    const startMs = vals.occupationStartTimeMs?.valueOf() ?? null;
-    const endMs   = vals.occupationEndTimeMs?.valueOf()   ?? null;
-
     if (isEdit) {
-      updateOccupation(db, editRecord!.id, {
+      await updateFrequencyBlock(editRecord!.id, {
         frequencyOffset,
         occupiedBandwidth,
-        occupationStatus: vals.occupationStatus,
-        occupationStartTimeMs: startMs,
-        occupationEndTimeMs: endMs,
+        partitionStatus:  vals.partitionStatus,
+        usageType:        vals.usageType ?? null,
+        uplinkStartFreq:   vals.rxActualStart,
+        uplinkEndFreq:     vals.rxActualEnd,
+        downlinkStartFreq: vals.txActualStart,
+        downlinkEndFreq:   vals.txActualEnd,
       });
     } else {
-      const autoCode = `FB-${tp.switchCode}-${dayjs().format('YYMMDDHHmmss')}`;
-      insertOccupation(db, {
-        frequencyBlockCode:    autoCode,
-        switchId:              targetSwitchId,
-        switchCode:            tp.switchCode,
+      await createFrequencyBlock({
+        switchId:        targetSwitchId,
+        switchCode:      tp.switchCode,
         frequencyOffset,
         occupiedBandwidth,
-        occupationStatus:      vals.occupationStatus,
-        occupationStartTimeMs: startMs,
-        occupationEndTimeMs:   endMs,
+        partitionStatus:  vals.partitionStatus,
+        usageType:        vals.usageType ?? null,
+        uplinkStartFreq:   vals.rxActualStart,
+        uplinkEndFreq:     vals.rxActualEnd,
+        downlinkStartFreq: vals.txActualStart,
+        downlinkEndFreq:   vals.txActualEnd,
       });
     }
 
@@ -279,7 +279,7 @@ export default function OccupationForm({
         mask:   { backdropFilter: 'blur(2px)' },
       }}
     >
-      {/* ── 转发器信息卡 ── */}
+      {/* ── 通道信息卡 ── */}
       {activeTransponder && (
         <div style={{
           background: DARK.bg,
@@ -315,28 +315,28 @@ export default function OccupationForm({
               </span>
             </div>
           ) : (
-            <span style={{ color: '#f59e0b' }}>⚠ 该转发器暂无频率数据</span>
+            <span style={{ color: '#f59e0b' }}>⚠ 该通道暂无频率数据</span>
           )}
         </div>
       )}
 
       <Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
 
-        {/* 新建时选择转发器 */}
+        {/* 新建时选择通道 */}
         {!isEdit && (
           <Form.Item
             name="switchId"
-            label={<span style={{ color: DARK.muted }}>转发器</span>}
-            rules={[{ required: true, message: '请选择转发器' }]}
+            label={<span style={{ color: DARK.muted }}>通道</span>}
+            rules={[{ required: true, message: '请选择通道' }]}
           >
             <Select
               showSearch
               optionFilterProp="label"
-              placeholder="选择转发器"
+              placeholder="选择通道"
               onChange={handleSwitchChange}
               options={transponders.map((t) => ({
                 value: t.switchId,
-                label: `${t.transponderName}（${t.band}${t.polarization ? ' ' + t.polarization : ''}）`,
+                label: fmtChannelLabel(t),
               }))}
             />
           </Form.Item>
@@ -452,30 +452,26 @@ export default function OccupationForm({
           </div>
         )}
 
-        {/* ── 状态 ── */}
-        <Form.Item
-          name="occupationStatus"
-          label={<span style={{ color: DARK.muted }}>占用状态</span>}
-          rules={[{ required: true, message: '请选择状态' }]}
-        >
-          <Select options={STATUS_OPTIONS} placeholder="占用状态" />
-        </Form.Item>
-
-        {/* ── 时间 ── */}
+        {/* ── 划分状态 + 用途 ── */}
         <Space style={{ width: '100%' }} styles={{ item: { flex: 1 } }}>
           <Form.Item
-            name="occupationStartTimeMs"
-            label={<span style={{ color: DARK.muted }}>占用开始时间（可选）</span>}
+            name="partitionStatus"
+            label={<span style={{ color: DARK.muted }}>划分状态</span>}
+            rules={[{ required: true, message: '请选择划分状态' }]}
             style={{ flex: 1 }}
           >
-            <DatePicker showTime style={{ width: '100%' }} placeholder="选择开始时间" />
+            <Select options={PARTITION_OPTIONS} placeholder="划分状态" />
           </Form.Item>
           <Form.Item
-            name="occupationEndTimeMs"
-            label={<span style={{ color: DARK.muted }}>占用结束时间（空=长期）</span>}
+            name="usageType"
+            label={<span style={{ color: DARK.muted }}>用途分类（可选）</span>}
             style={{ flex: 1 }}
           >
-            <DatePicker showTime style={{ width: '100%' }} placeholder="空表示长期占用" />
+            <Select
+              options={USAGE_TYPE_OPTIONS}
+              placeholder="出租 / 合作 / 自用 / 禁用"
+              allowClear
+            />
           </Form.Item>
         </Space>
 

@@ -5,4 +5,5 @@ export const PERMISSIONS = {
   canViewQuery:        (_role: Role) => true,
   canExportReport:     (_role: Role) => true,
   canDeleteOccupation: (role: Role) => role === 'delivery' || role === 'satellite_engineer',
+  canEditChannelName:  (role: Role) => role === 'delivery' || role === 'satellite_engineer',
 } as const;

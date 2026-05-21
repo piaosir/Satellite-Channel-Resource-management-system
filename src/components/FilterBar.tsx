@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Select, Button, Space } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
+import { fmtPolarization } from '@/utils/freqCalc';
 
 export interface FilterValues {
   transponderSwitchId?: number;
@@ -56,7 +57,7 @@ export default function FilterBar({
             allowClear
             showSearch
             optionFilterProp="label"
-            placeholder="转发器"
+            placeholder="通道"
             value={transponderSwitchId}
             onChange={setTransponderSwitchId}
             style={{ width: 180 }}
@@ -77,9 +78,9 @@ export default function FilterBar({
           value={polarization}
           onChange={setPolarization}
           style={{ width: 90 }}
-          options={(availablePolarizations ?? ['H', 'V']).map((p) => ({
+          options={(availablePolarizations ?? ['H', 'V', 'L', 'R', 'Z']).map((p) => ({
             value: p,
-            label: p === 'H' ? 'H 水平' : p === 'V' ? 'V 垂直' : p,
+            label: fmtPolarization(p),
           }))}
         />
         <Select
@@ -100,9 +101,8 @@ export default function FilterBar({
           onChange={setOccStatus}
           style={{ width: 110 }}
           options={[
-            { value: '占用', label: '已占用' },
-            { value: '空闲', label: '空闲' },
-            { value: '干扰', label: '干扰' },
+            { value: 'P', label: 'P 划分（在用）' },
+            { value: 'R', label: 'R 回收（空闲）' },
           ]}
         />
         <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>

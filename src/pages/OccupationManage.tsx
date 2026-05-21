@@ -2,19 +2,17 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Table, Button, Space, Popconfirm,
-  Tag, Badge, Tooltip, message,
+  Tag, Badge, Tooltip, message, Input,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import FilterBar from '@/components/FilterBar';
 import OccupationForm from '@/components/OccupationForm';
 import { useStore } from '@/store/useStore';
-import {
-  queryTransponders, queryAllOccupations, deleteOccupation,
-} from '@/db/queries';
-import type { OccupationFull } from '@/db/queries';
-import type { Transponder, Occupation } from '@/types';
+import { fetchTransponders, fetchFrequencyBlocksBySatellite, deleteFrequencyBlock, updateChannelCommonName } from '@/api';
+import type { Transponder, FrequencyBlock, FrequencyBlockFull } from '@/types';
 import type { FilterValues } from '@/components/FilterBar';
+import { fmtPolarization, fmtChannelLabel } from '@/utils/freqCalc';
 
 const DARK = {
   bg: '#0f172a',
@@ -24,20 +22,22 @@ const DARK = {
   muted: '#64748b',
 };
 
-const STATUS_COLOR: Record<string, string> = { 占用: 'blue', 空闲: 'default', 干扰: 'error' };
-
-function msToStr(ms: number | null): string {
-  if (ms == null) return '—';
-  const d = new Date(ms);
-  return d.toLocaleString('zh-CN', { hour12: false });
+/** 状态展示辅助 */
+function occStatusLabel(o: FrequencyBlock): string {
+  if (o.usageType === '禁用') return '禁用';
+  return o.partitionStatus === 'P' ? o.usageType ?? '划分' : '空闲';
+}
+function occStatusColor(o: FrequencyBlock): string {
+  if (o.usageType === '禁用') return 'error';
+  return o.partitionStatus === 'P' ? 'blue' : 'default';
 }
 
 export default function OccupationManage() {
   const navigate = useNavigate();
-  const { db, role, selectedSatelliteId } = useStore();
+  const { role, selectedSatelliteId } = useStore();
 
   const [transponders, setTransponders] = useState<Transponder[]>([]);
-  const [allOccs, setAllOccs]           = useState<OccupationFull[]>([]);
+  const [allOccs, setAllOccs]           = useState<FrequencyBlockFull[]>([]);
 
   // 统一筛选条件
   const [filters, setFilters] = useState<FilterValues>({});
@@ -54,15 +54,22 @@ export default function OccupationManage() {
   const availableTransponders = useMemo(
     () => transponders.map((t) => ({
       switchId: t.switchId,
-      label: `${t.transponderName}（${t.band}${t.polarization ? ' ' + t.polarization : ''}）`,
+      label: fmtChannelLabel(t),
     })),
     [transponders],
   );
 
   // Modal
   const [formOpen, setFormOpen]           = useState(false);
-  const [editRecord, setEditRecord]       = useState<Occupation | null>(null);
+  const [editRecord, setEditRecord]       = useState<FrequencyBlock | null>(null);
   const [initTransponder, setInitTransponder] = useState<Transponder | null>(null);
+
+  // 通道名称内联编辑
+  const [editingChannelId, setEditingChannelId] = useState<number | null>(null);
+  const [nameInput, setNameInput]               = useState('');
+  const [savingName, setSavingName]             = useState(false);
+
+  const canEditName = role != null && (role === 'delivery' || role === 'satellite_engineer');
 
   // 权限守卫
   useEffect(() => {
@@ -71,23 +78,23 @@ export default function OccupationManage() {
 
   // 加载数据
   const reload = useCallback(() => {
-    if (!db || !selectedSatelliteId) return;
-    setTransponders(queryTransponders(db, selectedSatelliteId));
-    setAllOccs(queryAllOccupations(db, selectedSatelliteId));
-  }, [db, selectedSatelliteId]);
+    if (!selectedSatelliteId) return;
+    fetchTransponders(selectedSatelliteId).then(setTransponders).catch(console.error);
+    fetchFrequencyBlocksBySatellite(selectedSatelliteId).then(setAllOccs).catch(console.error);
+  }, [selectedSatelliteId]);
 
   useEffect(() => {
     reload();
   }, [reload]);
 
-  // 前端筛选（转发器 / 频段 / 极化 / 开关状态 / 占用状态）
+  // 前端筛选（通道 / 频段 / 极化 / 开关状态 / 占用状态）
   const filtered = useMemo(() => {
     return allOccs.filter((o) => {
       if (filters.transponderSwitchId !== undefined && o.switchId !== filters.transponderSwitchId) return false;
       if (filters.band         && o.band !== filters.band)                                         return false;
       if (filters.polarization && o.polarization !== filters.polarization)                         return false;
       if (filters.switchStatus !== undefined && o.switchStatus !== filters.switchStatus)           return false;
-      if (filters.occStatus    && o.occupationStatus !== filters.occStatus)                        return false;
+      if (filters.occStatus    && o.partitionStatus !== filters.occStatus)                        return false;
       return true;
     });
   }, [allOccs, filters]);
@@ -98,37 +105,95 @@ export default function OccupationManage() {
     setFormOpen(true);
   }
 
-  function openEdit(record: OccupationFull) {
-    // OccupationFull satisfies Occupation (has all base fields)
-    const base: Occupation = {
+  function openEdit(record: FrequencyBlockFull) {
+    const base: FrequencyBlock = {
       id: record.id,
-      frequencyBlockCode: record.frequencyBlockCode,
-      switchId: record.switchId,
-      switchCode: record.switchCode,
-      occupiedBandwidth: record.occupiedBandwidth,
-      frequencyOffset: record.frequencyOffset,
-      occupationStatus: record.occupationStatus as Occupation['occupationStatus'],
-      occupationStartTimeMs: record.occupationStartTimeMs,
-      occupationEndTimeMs:   record.occupationEndTimeMs,
+      frequencyBlockCode:  record.frequencyBlockCode,
+      frequencyBlockCode2: record.frequencyBlockCode2,
+      switchId:            record.switchId,
+      switchCode:          record.switchCode,
+      occupiedBandwidth:   record.occupiedBandwidth,
+      frequencyOffset:     record.frequencyOffset,
+      partitionStatus:     record.partitionStatus,
+      usageType:           record.usageType,
+      statusUpdateTime:    record.statusUpdateTime,
+      uplinkStartFreq:     record.uplinkStartFreq,
+      uplinkEndFreq:       record.uplinkEndFreq,
+      downlinkStartFreq:   record.downlinkStartFreq,
+      downlinkEndFreq:     record.downlinkEndFreq,
     };
     setEditRecord(base);
     setInitTransponder(null);
     setFormOpen(true);
   }
 
-  function handleDelete(id: number) {
-    if (!db) return;
-    deleteOccupation(db, id);
+  async function handleDelete(id: number) {
+    await deleteFrequencyBlock(id);
     message.success('已删除');
     reload();
   }
 
-  const columns: ColumnsType<OccupationFull> = [
+  async function handleSaveName(channelId: number) {
+    if (!nameInput.trim()) return;
+    setSavingName(true);
+    try {
+      await updateChannelCommonName(channelId, nameInput.trim());
+      message.success('通道名称已更新');
+      setEditingChannelId(null);
+      reload();
+    } catch (e) {
+      message.error((e as Error).message ?? '保存失败');
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  const columns: ColumnsType<FrequencyBlockFull> = [
     {
-      title: '转发器',
+      title: '通道',
       dataIndex: 'transponderName',
-      width: 80,
-      render: (v) => <span style={{ color: DARK.text, fontWeight: 500 }}>{v}</span>,
+      width: 160,
+      render: (_v, record) => {
+        if (canEditName && editingChannelId === record.inputChannelId) {
+          return (
+            <Space size={4}>
+              <Input
+                size="small"
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                onPressEnter={() => handleSaveName(record.inputChannelId)}
+                style={{ width: 110 }}
+                autoFocus
+              />
+              <Button
+                type="text" size="small" icon={<CheckOutlined />}
+                style={{ color: '#4ade80' }}
+                loading={savingName}
+                onClick={() => handleSaveName(record.inputChannelId)}
+              />
+              <Button
+                type="text" size="small" icon={<CloseOutlined />}
+                style={{ color: '#94a3b8' }}
+                onClick={() => setEditingChannelId(null)}
+              />
+            </Space>
+          );
+        }
+        return (
+          <Space size={4}>
+            <span style={{ color: DARK.text, fontWeight: 500 }}>{fmtChannelLabel(record)}</span>
+            {canEditName && (
+              <Tooltip title="修改通道名称">
+                <Button
+                  type="text" size="small" icon={<EditOutlined />}
+                  style={{ color: '#60a5fa' }}
+                  onClick={() => { setEditingChannelId(record.inputChannelId); setNameInput(record.transponderName); }}
+                />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
       sorter: (a, b) => a.transponderName.localeCompare(b.transponderName),
     },
     {
@@ -142,8 +207,8 @@ export default function OccupationManage() {
     {
       title: '上行极化',
       dataIndex: 'polarization',
-      width: 65,
-      render: (v) => v ?? '—',
+      width: 80,
+      render: (v) => fmtPolarization(v),
     },
     {
       title: '上行波束',
@@ -162,8 +227,8 @@ export default function OccupationManage() {
     {
       title: '下行极化',
       dataIndex: 'txPolarization',
-      width: 65,
-      render: (v) => v ?? '—',
+      width: 80,
+      render: (v) => fmtPolarization(v),
     },
     {
       title: '下行波束',
@@ -181,8 +246,8 @@ export default function OccupationManage() {
       title: '上行频率段',
       width: 170,
       render: (_, r) => (
-        r.rxActualStartFreq != null
-          ? `${r.rxActualStartFreq.toFixed(2)} ~ ${r.rxActualEndFreq.toFixed(2)} MHz`
+        r.uplinkStartFreq != null
+          ? `${r.uplinkStartFreq.toFixed(2)} ~ ${r.uplinkEndFreq?.toFixed(2)} MHz`
           : '—'
       ),
     },
@@ -190,8 +255,8 @@ export default function OccupationManage() {
       title: '下行频率段',
       width: 170,
       render: (_, r) => (
-        r.txActualStartFreq != null
-          ? `${r.txActualStartFreq.toFixed(2)} ~ ${r.txActualEndFreq.toFixed(2)} MHz`
+        r.downlinkStartFreq != null
+          ? `${r.downlinkStartFreq.toFixed(2)} ~ ${r.downlinkEndFreq?.toFixed(2)} MHz`
           : '—'
       ),
     },
@@ -209,9 +274,8 @@ export default function OccupationManage() {
     },
     {
       title: '状态',
-      dataIndex: 'occupationStatus',
-      width: 70,
-      render: (v) => <Tag color={STATUS_COLOR[v] ?? 'default'}>{v}</Tag>,
+      width: 80,
+      render: (_, r) => <Tag color={occStatusColor(r)}>{occStatusLabel(r)}</Tag>,
     },
     {
       title: '开关',
@@ -220,18 +284,6 @@ export default function OccupationManage() {
       render: (v) => (
         <Badge status={v === 1 ? 'success' : 'error'} text={v === 1 ? '开' : '关'} />
       ),
-    },
-    {
-      title: '开始时间',
-      dataIndex: 'occupationStartTimeMs',
-      width: 150,
-      render: msToStr,
-    },
-    {
-      title: '结束时间',
-      dataIndex: 'occupationEndTimeMs',
-      width: 150,
-      render: (v) => (v == null ? <span style={{ color: DARK.muted }}>长期</span> : msToStr(v)),
     },
     {
       title: '操作',
@@ -303,7 +355,7 @@ export default function OccupationManage() {
 
       {/* 表格 */}
       <div style={{ padding: '16px 24px' }}>
-        <Table<OccupationFull>
+        <Table<FrequencyBlockFull>
           size="small"
           columns={columns}
           dataSource={filtered}

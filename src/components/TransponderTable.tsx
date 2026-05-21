@@ -1,24 +1,37 @@
 import { useMemo } from 'react';
 import { Table, Tag, Badge, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import type { Transponder, Occupation } from '@/types';
-import { fmtFreq } from '@/utils/freqCalc';
+import type { Transponder, FrequencyBlock } from '@/types';
+import { fmtFreq, fmtPolarization, fmtChannelLabel } from '@/utils/freqCalc';
 
 interface TransponderTableProps {
   transponders: Transponder[];
-  occMap: Record<number, Occupation[]>;
+  occMap: Record<number, FrequencyBlock[]>;
   onRowClick: (t: Transponder) => void;
 }
 
 const BAND_COLOR: Record<string, string> = { Ku: 'blue', EKu: 'purple', C: 'green' };
-const STATUS_COLOR: Record<string, string> = { '占用': '#1677ff', '空闲': '#52c41a', '干扰': '#ff4d4f' };
 
-function OccBar({ occs, channelBw, switchOff }: { occs: Occupation[]; channelBw: number; switchOff?: boolean }) {
+/** 分区状态 + 用途 → 显示颜色 */
+function getOccColor(occ: FrequencyBlock): string {
+  if (occ.usageType === '禁用') return '#ff4d4f';
+  if (occ.partitionStatus === 'P') return '#1677ff';
+  return '#52c41a'; // R 回收/空闲
+}
+
+/** 分区状态 + 用途 → 显示文字 */
+function getOccLabel(occ: FrequencyBlock): string {
+  if (occ.usageType === '禁用') return '禁用';
+  if (occ.partitionStatus === 'P') return occ.usageType ?? '划分';
+  return '空闲';
+}
+
+function OccBar({ occs, channelBw, switchOff }: { occs: FrequencyBlock[]; channelBw: number; switchOff?: boolean }) {
   const tip = switchOff
     ? '开关已断，通道不可用'
     : occs.length === 0
       ? '无占用记录'
-      : occs.map((o) => `${o.occupationStatus} ${fmtFreq(o.occupiedBandwidth)}MHz`).join(' / ');
+      : occs.map((o) => `${getOccLabel(o)} ${fmtFreq(o.occupiedBandwidth)}MHz`).join(' / ');
 
   // 摘要文字：按状态汇总
   const summary = (() => {
@@ -27,10 +40,11 @@ function OccBar({ occs, channelBw, switchOff }: { occs: Occupation[]; channelBw:
     const totalOcc = occs.reduce((s, o) => s + o.occupiedBandwidth, 0);
     const parts = Object.entries(
       occs.reduce<Record<string, number>>((acc, o) => {
-        acc[o.occupationStatus] = (acc[o.occupationStatus] ?? 0) + o.occupiedBandwidth;
+        const label = getOccLabel(o);
+        acc[label] = (acc[label] ?? 0) + o.occupiedBandwidth;
         return acc;
       }, {}),
-    ).map(([status, bw]) => `${status}${fmtFreq(bw)}MHz`);
+    ).map(([label, bw]) => `${label}${fmtFreq(bw)}MHz`);
     return `${parts.join('/')}（共${fmtFreq(totalOcc)}MHz）`;
   })();
 
@@ -50,7 +64,7 @@ function OccBar({ occs, channelBw, switchOff }: { occs: Occupation[]; channelBw:
               return (
                 <div key={i} style={{
                   position: 'absolute', left: `${left}%`, width: `${width}%`,
-                  height: '100%', background: STATUS_COLOR[occ.occupationStatus] ?? '#475569',
+                  height: '100%', background: getOccColor(occ),
                   opacity: 0.9, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {width >= 22 && (
@@ -78,10 +92,10 @@ export default function TransponderTable({ transponders, occMap, onRowClick }: T
   const columns: ColumnsType<Transponder> = useMemo(
     () => [
       {
-        title: '转发器',
+        title: '通道',
         dataIndex: 'transponderName',
         width: 90,
-        render: (v) => <b style={{ color: '#e2e8f0' }}>{v}</b>,
+        render: (_v, record) => <b style={{ color: '#e2e8f0' }}>{fmtChannelLabel(record)}</b>,
         sorter: (a, b) => a.transponderName.localeCompare(b.transponderName),
       },
       {
@@ -93,8 +107,8 @@ export default function TransponderTable({ transponders, occMap, onRowClick }: T
       {
         title: '上行极化',
         dataIndex: 'polarization',
-        width: 65,
-        render: (v) => v ?? '—',
+        width: 80,
+        render: (v) => fmtPolarization(v),
       },
       {
         title: '上行波束',
@@ -111,8 +125,8 @@ export default function TransponderTable({ transponders, occMap, onRowClick }: T
       {
         title: '下行极化',
         dataIndex: 'txPolarization',
-        width: 65,
-        render: (v) => v ?? '—',
+        width: 80,
+        render: (v) => fmtPolarization(v),
       },
       {
         title: '下行波束',

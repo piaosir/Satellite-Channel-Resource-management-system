@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SearchOutlined, ToolOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useStore } from '@/store/useStore';
-import { querySatellites } from '@/db/queries';
+import { fetchSatellites } from '@/api';
 import { PERMISSIONS } from '@/utils/roleGuard';
 
 interface FuncCard {
@@ -15,20 +15,21 @@ interface FuncCard {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { db, role, selectedSatelliteId, setSatellite } = useStore();
+  const { role, selectedSatelliteId, setSatellite } = useStore();
 
-  // 若还没有选中卫星，自动选第一颗
+  // 若还没有选中卡星，自动选第一颗
   useEffect(() => {
-    if (!db || selectedSatelliteId) return;
-    const list = querySatellites(db);
-    if (list.length > 0) setSatellite(list[0].id);
-  }, [db, selectedSatelliteId, setSatellite]);
+    if (selectedSatelliteId) return;
+    fetchSatellites().then((list) => {
+      if (list.length > 0) setSatellite(list[0].id);
+    }).catch(console.error);
+  }, [selectedSatelliteId, setSatellite]);
 
   const cards: FuncCard[] = [
     {
       icon: <SearchOutlined />,
       title: '资源查询',
-      desc: '查看卫星转发器频率占用状态，支持频段/极化等多维筛选',
+      desc: '查看卫星通道频率占用状态，支持频段/极化等多维筛选',
       path: '/query',
       color: '#3b82f6',
     },

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Select, Tag, Button } from 'antd';
 import MatrixLogoIcon from '@/components/MatrixLogoIcon';
 import { useStore } from '@/store/useStore';
-import { querySatellites } from '@/db/queries';
+import { fetchSatellites } from '@/api';
 import type { Satellite } from '@/types';
 import type { Role } from '@/store/useStore';
 import { useState } from 'react';
@@ -18,17 +18,17 @@ const roleLabels: Record<Role, { label: string; color: string }> = {
 
 export default function TopBar() {
   const navigate = useNavigate();
-  const { db, role, selectedSatelliteId, setSatellite } = useStore();
+  const { role, selectedSatelliteId, setSatellite } = useStore();
   const [satellites, setSatellites] = useState<Satellite[]>([]);
 
   useEffect(() => {
-    if (!db) return;
-    const list = querySatellites(db);
-    setSatellites(list);
-    if (!selectedSatelliteId && list.length > 0) {
-      setSatellite(list[0].id);
-    }
-  }, [db, selectedSatelliteId, setSatellite]);
+    fetchSatellites().then((list) => {
+      setSatellites(list);
+      if (!selectedSatelliteId && list.length > 0) {
+        setSatellite(list[0].id);
+      }
+    }).catch(console.error);
+  }, [selectedSatelliteId, setSatellite]);
 
   const roleInfo = role ? roleLabels[role] : null;
 

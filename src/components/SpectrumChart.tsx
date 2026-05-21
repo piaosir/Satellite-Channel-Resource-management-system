@@ -1,12 +1,21 @@
-import type { Occupation } from '@/types';
+import type { FrequencyBlock } from '@/types';
 import { fmtFreq } from '@/utils/freqCalc';
 
 const STATUS_COLOR: Record<string, string> = {
-  占用: '#1677ff',
-  空闲: '#52c41a',
-  干扰: '#ff4d4f',
-  预览: '#facc15',
+  P: '#1677ff',      // 划分/在用
+  R: '#52c41a',      // 空闲/回收
+  '禁用': '#ff4d4f',
+  '预览': '#facc15',
 };
+
+function getOccStatus(o: FrequencyBlock): string {
+  if (o.usageType === '禁用') return '禁用';
+  return o.partitionStatus === 'P' ? o.usageType ?? '划分' : '空闲';
+}
+function getOccColor(o: FrequencyBlock): string {
+  if (o.usageType === '禁用') return STATUS_COLOR['禁用'];
+  return STATUS_COLOR[o.partitionStatus] ?? '#475569';
+}
 
 interface SpectrumChartProps {
   rxStartFreq: number | null;
@@ -14,7 +23,7 @@ interface SpectrumChartProps {
   txStartFreq: number | null;
   txEndFreq: number | null;
   channelBw: number | null;
-  occupations: Occupation[];
+  occupations: FrequencyBlock[];
   transponderName: string;
   previewOcc?: { frequencyOffset: number; occupiedBandwidth: number } | null;
   switchOff?: boolean;
@@ -36,7 +45,7 @@ function FreqRow({
 }: {
   label: string;
   freqRange: string;
-  items: { x: number; w: number; status: string; bw: number; start: number; end: number }[];
+  items: { x: number; w: number; status: string; color: string; bw: number; start: number; end: number }[];
   channelBw: number;
   rowY: number;
   color?: string;
@@ -52,7 +61,7 @@ function FreqRow({
       <rect x={PAD_L} y={rowY} width={INNER_W} height={BAR_H} fill="#1e293b" rx={3} />
       {/* 各载波矩形 */}
       {items.map((item, i) => {
-        const color = STATUS_COLOR[item.status] ?? '#475569';
+        const color = item.color ?? '#475569';
         const midX  = item.x + item.w / 2;
         return (
           <g key={i}>
@@ -109,12 +118,12 @@ export default function SpectrumChart({
     );
   }
 
-  type Item = { status: string; offset: number; bw: number };
+  type Item = { status: string; color: string; offset: number; bw: number };
   const raw: Item[] = occupations.map((o) => ({
-    status: o.occupationStatus, offset: o.frequencyOffset, bw: o.occupiedBandwidth,
+    status: getOccStatus(o), color: getOccColor(o), offset: o.frequencyOffset, bw: o.occupiedBandwidth,
   }));
   if (previewOcc) {
-    raw.push({ status: '预览', offset: previewOcc.frequencyOffset, bw: previewOcc.occupiedBandwidth });
+    raw.push({ status: '预览', color: STATUS_COLOR['预览'], offset: previewOcc.frequencyOffset, bw: previewOcc.occupiedBandwidth });
   }
 
   function toBarItems(baseFreq: number) {
@@ -126,6 +135,7 @@ export default function SpectrumChart({
         x:      PAD_L + posRatio * INNER_W,
         w:      Math.max(2, wRatio * INNER_W),
         status: item.status,
+        color:  item.color,
         bw:     item.bw,
         start:  baseFreq + item.offset,
         end:    baseFreq + item.offset + item.bw,
@@ -138,12 +148,15 @@ export default function SpectrumChart({
       <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} width="100%" height={SVG_H} style={{ display: 'block' }}>
 
         {/* 图例 */}
-        {(['占用', '空闲', '干扰'] as const).map((s, i) => (
-          <g key={s} transform={`translate(${SVG_W - 186 + i * 60}, 14)`}>
-            <rect width={11} height={11} fill={STATUS_COLOR[s]} rx={2} />
-            <text x={15} y={10} fill="#94a3b8" fontSize={11}>{s}</text>
-          </g>
-        ))}
+        {(['划分', '空闲', '禁用'] as const).map((s, i) => {
+          const colorKey = s === '划分' ? 'P' : s === '空闲' ? 'R' : '禁用';
+          return (
+            <g key={s} transform={`translate(${SVG_W - 186 + i * 60}, 14)`}>
+              <rect width={11} height={11} fill={STATUS_COLOR[colorKey]} rx={2} />
+              <text x={15} y={10} fill="#94a3b8" fontSize={11}>{s}</text>
+            </g>
+          );
+        })}
 
         <FreqRow
           label="上行"
