@@ -85,16 +85,40 @@ export default function TransponderTable({ transponders, occMap, onRowClick }: T
         sorter: (a, b) => a.transponderName.localeCompare(b.transponderName),
       },
       {
-        title: '频段',
+        title: '上行频段',
         dataIndex: 'band',
-        width: 70,
+        width: 75,
         render: (v) => <Tag color={BAND_COLOR[v] ?? 'default'}>{v}</Tag>,
       },
       {
-        title: '极化',
+        title: '上行极化',
         dataIndex: 'polarization',
-        width: 60,
+        width: 65,
         render: (v) => v ?? '—',
+      },
+      {
+        title: '上行波束',
+        dataIndex: 'antennaName',
+        width: 110,
+        render: (v) => v ?? <span style={{ color: '#475569' }}>—</span>,
+      },
+      {
+        title: '下行频段',
+        dataIndex: 'txBand',
+        width: 75,
+        render: (v) => v ? <Tag color={BAND_COLOR[v] ?? 'default'}>{v}</Tag> : <span style={{ color: '#475569' }}>—</span>,
+      },
+      {
+        title: '下行极化',
+        dataIndex: 'txPolarization',
+        width: 65,
+        render: (v) => v ?? '—',
+      },
+      {
+        title: '下行波束',
+        dataIndex: 'txAntennaName',
+        width: 110,
+        render: (v) => v ?? <span style={{ color: '#475569' }}>—</span>,
       },
       {
         title: '上行频率',
@@ -151,7 +175,7 @@ export default function TransponderTable({ transponders, occMap, onRowClick }: T
       dataSource={transponders}
       rowKey="switchId"
       pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条` }}
-      scroll={{ x: 1000 }}
+      scroll={{ x: 1400 }}
       onRow={(record) => ({ onClick: () => onRowClick(record), style: { cursor: 'pointer' } })}
     />
   );

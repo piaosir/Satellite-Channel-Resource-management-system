@@ -132,18 +132,44 @@ export default function OccupationManage() {
       sorter: (a, b) => a.transponderName.localeCompare(b.transponderName),
     },
     {
-      title: '频段',
+      title: '上行频段',
       dataIndex: 'band',
-      width: 70,
+      width: 75,
       render: (v) => (
         <Tag color={v === 'Ku' ? 'blue' : v === 'EKu' ? 'purple' : 'green'}>{v}</Tag>
       ),
     },
     {
-      title: '极化',
+      title: '上行极化',
       dataIndex: 'polarization',
-      width: 60,
+      width: 65,
       render: (v) => v ?? '—',
+    },
+    {
+      title: '上行波束',
+      dataIndex: 'antennaName',
+      width: 110,
+      render: (v) => v ?? <span style={{ color: DARK.muted }}>—</span>,
+    },
+    {
+      title: '下行频段',
+      dataIndex: 'txBand',
+      width: 75,
+      render: (v) => v
+        ? <Tag color={v === 'Ku' ? 'blue' : v === 'EKu' ? 'purple' : 'green'}>{v}</Tag>
+        : <span style={{ color: DARK.muted }}>—</span>,
+    },
+    {
+      title: '下行极化',
+      dataIndex: 'txPolarization',
+      width: 65,
+      render: (v) => v ?? '—',
+    },
+    {
+      title: '下行波束',
+      dataIndex: 'txAntennaName',
+      width: 110,
+      render: (v) => v ?? <span style={{ color: DARK.muted }}>—</span>,
     },
     {
       title: '频率块代码',
@@ -282,7 +308,7 @@ export default function OccupationManage() {
           columns={columns}
           dataSource={filtered}
           rowKey="id"
-          scroll={{ x: 1300 }}
+          scroll={{ x: 1700 }}
           pagination={{
             showSizeChanger: true,
             showQuickJumper: true,

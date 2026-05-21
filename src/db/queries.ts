@@ -36,8 +36,11 @@ export function queryTransponders(db: Database, satelliteId: number): Transponde
       MIN(ci_tx.channelEndFreq)                      AS txEndFreq,
       MIN(fcg.band)                                  AS band,
       MIN(fcg.polarization)                          AS polarization,
-      MIN(fcg.txRxType)                              AS txRxType,
       MIN(fcg.antennaName)                           AS antennaName,
+      MIN(fcg_tx.band)                               AS txBand,
+      MIN(fcg_tx.polarization)                       AS txPolarization,
+      MIN(fcg_tx.antennaName)                        AS txAntennaName,
+      MIN(fcg.txRxType)                              AS txRxType,
       m.id                                           AS matrixId,
       m.matrixCode,
       m.satelliteId
@@ -45,6 +48,7 @@ export function queryTransponders(db: Database, satelliteId: number): Transponde
     JOIN channel_info ci_rx  ON ci_rx.channelCodeShort  = sw.inputChannelCodeShort
     JOIN channel_info ci_tx  ON ci_tx.channelCodeShort  = sw.outputChannelCodeShort
     JOIN feed_channel_group_info fcg ON fcg.id = ci_rx.channelGroupId AND fcg.satelliteId = ${satelliteId}
+    LEFT JOIN feed_channel_group_info fcg_tx ON fcg_tx.id = ci_tx.channelGroupId AND fcg_tx.satelliteId = ${satelliteId}
     JOIN switch_matrix_info m   ON m.id = sw.matrixId
     WHERE m.satelliteId = ${satelliteId}
     GROUP BY sw.id, sw.switchCode, sw.switchStatus, sw.switchType,
@@ -89,12 +93,16 @@ export interface OccupationFull extends Occupation {
   satelliteCode: string;
   areaNo: number;
   groupNo: number;
-  // 通道组
+  // 上行通道组
   band: string;
   polarization: string | null;
   txRxType: string;
   antennaName: string | null;
   channelGroupCode: string;
+  // 下行通道组
+  txBand: string | null;
+  txPolarization: string | null;
+  txAntennaName: string | null;
   // 上行通道
   channelStartFreq: number;
   channelEndFreq: number;
@@ -138,6 +146,9 @@ export function queryAllOccupations(
       fcg.txRxType,
       fcg.antennaName,
       fcg.channelGroupCode,
+      fcg_tx.band                                                              AS txBand,
+      fcg_tx.polarization                                                      AS txPolarization,
+      fcg_tx.antennaName                                                       AS txAntennaName,
       ci_rx.channelStartFreq,
       ci_rx.channelEndFreq                                                     AS channelEndFreq,
       ci_rx.channelBandwidth                                                   AS channelBandwidth,
@@ -154,6 +165,7 @@ export function queryAllOccupations(
     JOIN channel_info ci_rx          ON ci_rx.channelCodeShort = sw.inputChannelCodeShort
     JOIN channel_info ci_tx          ON ci_tx.channelCodeShort = sw.outputChannelCodeShort
     JOIN feed_channel_group_info fcg ON fcg.id = ci_rx.channelGroupId AND fcg.satelliteId = ${satelliteId}
+    LEFT JOIN feed_channel_group_info fcg_tx ON fcg_tx.id = ci_tx.channelGroupId AND fcg_tx.satelliteId = ${satelliteId}
     WHERE m.satelliteId = ${satelliteId}
     ${statusClause}
     ORDER BY fcg.band, sw.inputPortSeq, occ.frequencyOffset

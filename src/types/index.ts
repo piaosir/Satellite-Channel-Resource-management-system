@@ -21,8 +21,11 @@ export interface Transponder {
   txEndFreq: number;
   band: string;
   polarization: string | null;
-  txRxType: string;
   antennaName: string | null;
+  txBand: string | null;
+  txPolarization: string | null;
+  txAntennaName: string | null;
+  txRxType: string;
   matrixId: number;
   matrixCode: string;
   satelliteId: number;
