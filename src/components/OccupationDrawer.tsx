@@ -17,6 +17,10 @@ import type { Transponder, FrequencyBlock } from '@/types';
 import { calcOccFreq, fmtFreq, fmtPolarization } from '@/utils/freqCalc';
 
 const STATUS_COLOR: Record<string, string> = { P: 'blue', R: 'default', '禁用': 'error' };
+function msToStr(ms: number | null | undefined): string {
+  if (ms == null) return '—';
+  return new Date(ms).toLocaleString('zh-CN', { hour12: false });
+}
 function occStatusLabel(occ: FrequencyBlock) {
   if (occ.usageType === '禁用') return '禁用';
   return occ.partitionStatus === 'P' ? occ.usageType ?? '划分' : '空闲';
@@ -41,12 +45,12 @@ interface OccupationDrawerProps {
 export default function OccupationDrawer({
   open, transponder, transponders = [], onClose, onOccChange, onTransponderChange,
 }: OccupationDrawerProps) {
-  const { db, role } = useStore();
-  const [occs, setOccs] = useState<Occupation[]>([]);
+  const { role } = useStore();
+  const [occs, setOccs] = useState<FrequencyBlock[]>([]);
 
   // 表单 Modal 状态
   const [formOpen, setFormOpen]       = useState(false);
-  const [editRecord, setEditRecord]   = useState<Occupation | null>(null);
+  const [editRecord, setEditRecord]   = useState<FrequencyBlock | null>(null);
 
   // 通道名称编辑状态
   const [editingName, setEditingName] = useState(false);
@@ -58,9 +62,9 @@ export default function OccupationDrawer({
   const canEditName = role != null && PERMISSIONS.canEditChannelName(role);
 
   const reload = useCallback(() => {
-    if (!db || !transponder) return;
-    setOccs(queryOccupations(db, transponder.switchId));
-  }, [db, transponder]);
+    if (!transponder) return;
+    fetchFrequencyBlocks(transponder.switchId).then(setOccs).catch(console.error);
+  }, [transponder]);
 
   useEffect(() => {
     if (open) reload();
@@ -77,9 +81,8 @@ export default function OccupationDrawer({
     message.success(editRecord ? '占用已更新' : '占用已新建');
   }
 
-  function handleDelete(id: number) {
-    if (!db) return;
-    deleteOccupation(db, id);
+  async function handleDelete(id: number) {
+    await deleteFrequencyBlock(id);
     reload();
     onOccChange?.();
     message.success('已删除');
@@ -105,13 +108,13 @@ export default function OccupationDrawer({
     setFormOpen(true);
   }
 
-  function openEdit(occ: Occupation) {
+  function openEdit(occ: FrequencyBlock) {
     setEditRecord(occ);
     setFormOpen(true);
   }
 
   // ── 占用记录表格列 ──────────────────────────────────────────
-  const columns: ColumnsType<Occupation> = [
+  const columns: ColumnsType<FrequencyBlock> = [
     {
       title: '上行频率段',
       render: (_, occ) => {
@@ -150,8 +153,7 @@ export default function OccupationDrawer({
     },
     {
       title: '状态',
-      dataIndex: 'occupationStatus',
-      render: (v) => <Tag color={STATUS_COLOR[v] ?? 'default'}>{v}</Tag>,
+      render: (_, occ) => <Tag color={occStatusColor(occ)}>{occStatusLabel(occ)}</Tag>,
       width: 68,
     },
     {
@@ -161,18 +163,11 @@ export default function OccupationDrawer({
       width: 120,
     },
     {
-      title: (
-        <Tooltip title="占用起止时间">
-          <span>起止时间 <InfoCircleOutlined /></span>
-        </Tooltip>
-      ),
+      title: '更新时间',
       width: 130,
       render: (_, occ) => (
-        <div style={{ fontSize: 11, lineHeight: 1.6 }}>
-          <div style={{ color: '#94a3b8' }}>起：{occ.occupationStartTimeMs ? msToStr(occ.occupationStartTimeMs) : '—'}</div>
-          <div style={{ color: occ.occupationEndTimeMs ? '#94a3b8' : '#f59e0b' }}>
-            止：{msToStr(occ.occupationEndTimeMs)}
-          </div>
+        <div style={{ fontSize: 11, color: '#94a3b8' }}>
+          {msToStr(occ.statusUpdateTime)}
         </div>
       ),
     },

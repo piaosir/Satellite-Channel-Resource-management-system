@@ -4,7 +4,7 @@ import FilterBar from '@/components/FilterBar';
 import TransponderTable from '@/components/TransponderTable';
 import OccupationDrawer from '@/components/OccupationDrawer';
 import { useStore } from '@/store/useStore';
-import { fetchTransponders, fetchFrequencyBlocks } from '@/api';
+import { fetchTransponders, fetchFrequencyBlocksBySatellite } from '@/api';
 import type { Transponder, FrequencyBlock } from '@/types';
 import type { FilterValues } from '@/components/FilterBar';
 import { fmtPolarization } from '@/utils/freqCalc';
@@ -40,27 +40,47 @@ export default function ResourceQuery() {
     if (role === null) navigate('/', { replace: true });
   }, [role, navigate]);
 
-  // 加载通道列表
+  // 将频率块列表按 switchId 分组成 occMap
+  const groupBySwitch = useCallback((blocks: FrequencyBlock[]) => {
+    const map: Record<number, FrequencyBlock[]> = {};
+    for (const b of blocks) {
+      if (!map[b.switchId]) map[b.switchId] = [];
+      map[b.switchId].push(b);
+    }
+    return map;
+  }, []);
+
+  // 并行加载通道列表 + 全卫星频率块（2 个请求替代原来的 1+N 个）
+  const reloadAll = useCallback(() => {
+    if (!selectedSatelliteId) return;
+    Promise.all([
+      fetchTransponders(selectedSatelliteId),
+      fetchFrequencyBlocksBySatellite(selectedSatelliteId),
+    ])
+      .then(([transponders, blocks]) => {
+        setAll(transponders);
+        setOccMap(groupBySwitch(blocks));
+      })
+      .catch(console.error);
+  }, [selectedSatelliteId, groupBySwitch]);
+
+  useEffect(() => {
+    reloadAll();
+  }, [reloadAll]);
+
+  // 刷新占用数据（单独一个请求）
+  const reloadOccMap = useCallback(() => {
+    if (!selectedSatelliteId) return;
+    fetchFrequencyBlocksBySatellite(selectedSatelliteId)
+      .then((blocks) => setOccMap(groupBySwitch(blocks)))
+      .catch(console.error);
+  }, [selectedSatelliteId, groupBySwitch]);
+
+  // 刷新通道列表
   const reloadTransponders = useCallback(() => {
     if (!selectedSatelliteId) return;
     fetchTransponders(selectedSatelliteId).then(setAll).catch(console.error);
   }, [selectedSatelliteId]);
-
-  useEffect(() => {
-    reloadTransponders();
-  }, [reloadTransponders]);
-
-  // 加载所有通道的占用数据（当卫星/通道列表变化时重载）
-  const reloadOccMap = useCallback(() => {
-    if (all.length === 0) return;
-    Promise.all(all.map((t) => fetchFrequencyBlocks(t.switchId).then((list) => [t.switchId, list] as const)))
-      .then((entries) => setOccMap(Object.fromEntries(entries)))
-      .catch(console.error);
-  }, [all]);
-
-  useEffect(() => {
-    reloadOccMap();
-  }, [reloadOccMap]);
 
   // 前端筛选（通道 / 频段 / 极化 / 开关状态 / 占用状态）
   const filtered = useMemo(() => {

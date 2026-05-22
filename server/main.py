@@ -30,6 +30,7 @@ from typing import Any, Optional
 
 import pymysql
 import pymysql.cursors
+from dbutils.pooled_db import PooledDB
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,29 +48,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── MySQL 连接 ─────────────────────────────────────────────────
-def _make_conn() -> pymysql.connections.Connection:
-    return pymysql.connect(
-        host=os.getenv("DB_HOST", "localhost"),
-        port=int(os.getenv("DB_PORT", "3306")),
-        user=os.getenv("DB_USER", "root"),
-        password=os.getenv("DB_PASSWORD", ""),
-        database=os.getenv("DB_NAME", "v5"),
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True,
-    )
+# ── MySQL 连接池 ───────────────────────────────────────────────
+# 使用连接池避免每次请求重新建立 TCP 连接，显著降低延迟
+_pool = PooledDB(
+    creator=pymysql,
+    maxconnections=10,   # 最大活跃连接数
+    mincached=2,         # 启动时预创建的空闲连接数
+    maxcached=5,         # 最多缓存的空闲连接数
+    blocking=True,       # 连接耗尽时排队等待
+    ping=1,              # 取连接时检测可用性（自动重连断开的连接）
+    host=os.getenv("DB_HOST", "localhost"),
+    port=int(os.getenv("DB_PORT", "3306")),
+    user=os.getenv("DB_USER", "root"),
+    password=os.getenv("DB_PASSWORD", ""),
+    database=os.getenv("DB_NAME", "v5"),
+    charset="utf8mb4",
+    cursorclass=pymysql.cursors.DictCursor,
+    autocommit=True,
+)
 
 
 @contextmanager
 def get_cursor():
-    """每次请求临时建连接，返回 DictCursor，结束后自动关闭。"""
-    conn = _make_conn()
+    """从连接池取连接，返回 DictCursor，结束后归还连接。"""
+    conn = _pool.connection()
     try:
         with conn.cursor() as cur:
             yield cur
     finally:
-        conn.close()
+        conn.close()   # 归还到连接池，而非真正关闭
 
 
 def to_json(rows: list[dict]) -> list[dict]:
@@ -208,21 +215,19 @@ def list_transponders(satellite_id: int):
             m.remark                                    AS matrixRemark,
             m.satelliteId
         FROM matrix_switch_status sw
-        JOIN matrix_port_info     mpi_in  ON mpi_in.id  = sw.inputPortId
-        JOIN matrix_port_info     mpi_out ON mpi_out.id = sw.outputPortId
-        JOIN channel_info         ci_rx   ON ci_rx.id   = mpi_in.channelId
-        JOIN channel_info         ci_tx   ON ci_tx.id   = mpi_out.channelId
-        JOIN channel_group_info   cg_rx   ON cg_rx.id   = ci_rx.channelGroupId
-                                         AND cg_rx.satelliteId = %s
-        LEFT JOIN channel_group_info cg_tx ON cg_tx.id  = ci_tx.channelGroupId
-                                          AND cg_tx.satelliteId = %s
         JOIN switch_matrix_info   m       ON m.id        = sw.matrixId
+        LEFT JOIN matrix_port_info     mpi_in  ON mpi_in.id  = sw.inputPortId
+        LEFT JOIN matrix_port_info     mpi_out ON mpi_out.id = sw.outputPortId
+        LEFT JOIN channel_info         ci_rx   ON ci_rx.id   = mpi_in.channelId
+        LEFT JOIN channel_info         ci_tx   ON ci_tx.id   = mpi_out.channelId
+        LEFT JOIN channel_group_info   cg_rx   ON cg_rx.id   = ci_rx.channelGroupId
+        LEFT JOIN channel_group_info   cg_tx   ON cg_tx.id   = ci_tx.channelGroupId
         WHERE m.satelliteId = %s
         ORDER BY cg_rx.band, sw.inputPortSeq
     """
     try:
         with get_cursor() as cur:
-            cur.execute(sql, (satellite_id, satellite_id, satellite_id))
+            cur.execute(sql, (satellite_id,))
             return to_json(cur.fetchall())
     except Exception as e:
         raise db_error(e)
@@ -276,21 +281,19 @@ def list_frequency_blocks_by_satellite(satellite_id: int):
             ci_tx.channelBandwidth                      AS txChannelBandwidth
         FROM frequency_block_realtime_status fb
         JOIN matrix_switch_status  sw      ON sw.id      = fb.switchId
-        JOIN matrix_port_info      mpi_in  ON mpi_in.id  = sw.inputPortId
-        JOIN matrix_port_info      mpi_out ON mpi_out.id = sw.outputPortId
-        JOIN channel_info          ci_rx   ON ci_rx.id   = mpi_in.channelId
-        JOIN channel_info          ci_tx   ON ci_tx.id   = mpi_out.channelId
-        JOIN channel_group_info    cg_rx   ON cg_rx.id   = ci_rx.channelGroupId
-                                          AND cg_rx.satelliteId = %s
-        LEFT JOIN channel_group_info cg_tx ON cg_tx.id   = ci_tx.channelGroupId
-                                          AND cg_tx.satelliteId = %s
         JOIN switch_matrix_info    m       ON m.id        = sw.matrixId
+        LEFT JOIN matrix_port_info      mpi_in  ON mpi_in.id  = sw.inputPortId
+        LEFT JOIN matrix_port_info      mpi_out ON mpi_out.id = sw.outputPortId
+        LEFT JOIN channel_info          ci_rx   ON ci_rx.id   = mpi_in.channelId
+        LEFT JOIN channel_info          ci_tx   ON ci_tx.id   = mpi_out.channelId
+        LEFT JOIN channel_group_info    cg_rx   ON cg_rx.id   = ci_rx.channelGroupId
+        LEFT JOIN channel_group_info    cg_tx   ON cg_tx.id   = ci_tx.channelGroupId
         WHERE m.satelliteId = %s
         ORDER BY cg_rx.band, sw.inputPortSeq, fb.frequencyOffset
     """
     try:
         with get_cursor() as cur:
-            cur.execute(sql, (satellite_id, satellite_id, satellite_id))
+            cur.execute(sql, (satellite_id,))
             return to_json(cur.fetchall())
     except Exception as e:
         raise db_error(e)
