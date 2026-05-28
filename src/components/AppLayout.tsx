@@ -4,7 +4,14 @@ import { Layout, Menu, Tag, Button, Select } from 'antd';
 import {
   AppstoreOutlined,
   SearchOutlined,
+  BarChartOutlined,
   ToolOutlined,
+  FileDoneOutlined,
+  HistoryOutlined,
+  DeploymentUnitOutlined,
+  CloudServerOutlined,
+  SwitcherOutlined,
+  ThunderboltOutlined,
   FileExcelOutlined,
   LogoutOutlined,
 } from '@ant-design/icons';
@@ -13,16 +20,47 @@ import { useStore } from '@/store/useStore';
 import { fetchSatellites } from '@/api';
 import type { Satellite } from '@/types';
 import type { Role } from '@/store/useStore';
+import { PERMISSIONS } from '@/utils/roleGuard';
 
 const { Sider, Header, Content } = Layout;
 
 const roleLabels: Record<Role, { label: string; color: string }> = {
-  business:           { label: '商务经理',     color: 'blue' },
-  product:            { label: '产品经理',     color: 'green' },
-  project_manager:    { label: '项目经理',     color: 'cyan' },
-  delivery:           { label: '交付经理',     color: 'orange' },
-  satellite_engineer: { label: '卫星通信工程师', color: 'purple' },
+  business_manager: { label: '商务经理',       color: 'blue' },
+  product_manager:  { label: '产品经理',       color: 'green' },
+  product_rd:       { label: '产品研发',       color: 'cyan' },
+  industry_manager: { label: '行业经理',       color: 'gold' },
+  ops_engineer:     { label: '运控工程师',     color: 'lime' },
+  network_engineer: { label: '网络系统工程师', color: 'purple' },
+  digital_engineer: { label: '数字化工程师',   color: 'magenta' },
+  inventory_manager:{ label: '库存管理员',     color: 'orange' },
+  ttc_engineer:     { label: '卫星测控工程师', color: 'red' },
 };
+
+function buildMenu(role: Role | null) {
+  const items: { key: string; icon: React.ReactNode; label: string }[] = [
+    { key: '/dashboard', icon: <AppstoreOutlined />, label: '工作台' },
+  ];
+  if (role && PERMISSIONS.canAccessQuery(role))
+    items.push({ key: '/query', icon: <SearchOutlined />, label: '资源查询' });
+  if (role && PERMISSIONS.canAccessStats(role))
+    items.push({ key: '/stats', icon: <BarChartOutlined />, label: '资源统计' });
+  if (role && PERMISSIONS.canManageOccupation(role))
+    items.push({ key: '/occupation', icon: <ToolOutlined />, label: '占用管理' });
+  if (role && PERMISSIONS.canAccessContracts(role))
+    items.push({ key: '/contracts', icon: <FileDoneOutlined />, label: '合约记录管理' });
+  if (role && PERMISSIONS.canAccessUsage(role))
+    items.push({ key: '/usage', icon: <HistoryOutlined />, label: '使用记录管理' });
+  if (role && PERMISSIONS.canAccessPlanning(role))
+    items.push({ key: '/planning', icon: <DeploymentUnitOutlined />, label: '载波规划管理' });
+  if (role && PERMISSIONS.canAccessGround(role))
+    items.push({ key: '/ground', icon: <CloudServerOutlined />, label: '地面系统管理' });
+  if (role && PERMISSIONS.canAccessChannelConfig(role))
+    items.push({ key: '/channel-config', icon: <SwitcherOutlined />, label: '通道配置管理' });
+  if (role && PERMISSIONS.canAccessTWTA(role))
+    items.push({ key: '/twta', icon: <ThunderboltOutlined />, label: '行波管状态管理' });
+  items.push({ key: '/report', icon: <FileExcelOutlined />, label: '报表导出' });
+  return items;
+}
 
 export default function AppLayout() {
   const navigate = useNavigate();
@@ -44,16 +82,7 @@ export default function AppLayout() {
   }, []);
 
   const roleInfo = role ? roleLabels[role] : null;
-
-  const menuItems = [
-    { key: '/dashboard', icon: <AppstoreOutlined />, label: '工作台' },
-    { key: '/query',     icon: <SearchOutlined />,   label: '资源查询' },
-    ...(role === 'delivery' || role === 'satellite_engineer'
-      ? [{ key: '/occupation', icon: <ToolOutlined />, label: '占用管理' }]
-      : []),
-    { key: '/report', icon: <FileExcelOutlined />, label: '报表导出' },
-  ];
-
+  const menuItems = buildMenu(role);
   const timeStr = now.toLocaleString('zh-CN', { hour12: false });
 
   return (
@@ -111,6 +140,7 @@ export default function AppLayout() {
             background: 'transparent',
             border: 'none',
             flex: 1,
+            overflowY: 'auto',
           }}
           theme="dark"
         />

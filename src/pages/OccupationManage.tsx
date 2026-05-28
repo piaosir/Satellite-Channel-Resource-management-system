@@ -13,6 +13,7 @@ import { fetchTransponders, fetchFrequencyBlocksBySatellite, deleteFrequencyBloc
 import type { Transponder, FrequencyBlock, FrequencyBlockFull } from '@/types';
 import type { FilterValues } from '@/components/FilterBar';
 import { fmtPolarization, fmtChannelLabel } from '@/utils/freqCalc';
+import { PERMISSIONS } from '@/utils/roleGuard';
 
 const DARK = {
   bg: '#0f172a',
@@ -69,7 +70,7 @@ export default function OccupationManage() {
   const [nameInput, setNameInput]               = useState('');
   const [savingName, setSavingName]             = useState(false);
 
-  const canEditName = role != null && (role === 'delivery' || role === 'satellite_engineer');
+  const canEditName = role != null && PERMISSIONS.canEditChannelName(role);
 
   // 权限守卫
   useEffect(() => {

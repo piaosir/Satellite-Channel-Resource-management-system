@@ -1,8 +1,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Tag } from 'antd';
 import {
-  UserOutlined,
+  DollarOutlined,
+  BulbOutlined,
+  ExperimentOutlined,
+  GlobalOutlined,
+  ControlOutlined,
+  ApiOutlined,
+  CodeOutlined,
+  ContainerOutlined,
+  AimOutlined,
   CheckOutlined,
   RightOutlined,
 } from '@ant-design/icons';
@@ -22,48 +29,84 @@ interface RoleDef {
 
 const roles: RoleDef[] = [
   {
-    key: 'business',
+    key: 'business_manager',
     label: '商务经理',
     subtitle: 'Business Manager',
-    icon: <UserOutlined />,
-    permissions: ['资源查询', '频谱可视化', '报表导出'],
+    icon: <DollarOutlined />,
+    permissions: ['资源查询', '资源统计', '合约记录管理', '使用记录管理'],
     color: '#3b82f6',
-    level: 'L1',
+    level: 'L2',
   },
   {
-    key: 'product',
+    key: 'product_manager',
     label: '产品经理',
     subtitle: 'Product Manager',
-    icon: <UserOutlined />,
-    permissions: ['资源查询', '频谱可视化', '报表导出'],
+    icon: <BulbOutlined />,
+    permissions: ['资源查询', '资源统计'],
     color: '#10b981',
     level: 'L2',
   },
   {
-    key: 'project_manager',
-    label: '项目经理',
-    subtitle: 'Project Manager',
-    icon: <UserOutlined />,
-    permissions: ['资源查询', '频谱可视化', '报表导出'],
+    key: 'product_rd',
+    label: '产品研发',
+    subtitle: 'Product R&D',
+    icon: <ExperimentOutlined />,
+    permissions: ['资源查询', '资源统计', '资源/载波规划管理'],
     color: '#06b6d4',
     level: 'L2',
   },
   {
-    key: 'delivery',
-    label: '交付经理',
-    subtitle: 'Delivery Manager',
-    icon: <UserOutlined />,
-    permissions: ['资源查询', '频谱可视化', '占用管理', '报表导出'],
+    key: 'industry_manager',
+    label: '行业经理',
+    subtitle: 'Industry Manager',
+    icon: <GlobalOutlined />,
+    permissions: ['资源查询', '资源统计', '占用管理', '使用记录管理', '合约记录管理'],
     color: '#f59e0b',
+    level: 'L2',
+  },
+  {
+    key: 'ops_engineer',
+    label: '运控工程师',
+    subtitle: 'Operations Engineer',
+    icon: <ControlOutlined />,
+    permissions: ['资源查询', '资源统计', '使用记录管理'],
+    color: '#84cc16',
     level: 'L3',
   },
   {
-    key: 'satellite_engineer',
-    label: '卫星通信工程师',
-    subtitle: 'Satellite Communication Engineer',
-    icon: <UserOutlined />,
-    permissions: ['资源查询', '频谱可视化', '占用管理', '报表导出'],
+    key: 'network_engineer',
+    label: '网络系统工程师',
+    subtitle: 'Network Systems Engineer',
+    icon: <ApiOutlined />,
+    permissions: ['资源查询', '资源统计', '占用管理', '使用记录管理', '合约记录管理', '地面系统管理'],
     color: '#8b5cf6',
+    level: 'L3',
+  },
+  {
+    key: 'digital_engineer',
+    label: '数字化工程师',
+    subtitle: 'Digital Engineer',
+    icon: <CodeOutlined />,
+    permissions: ['合约记录管理'],
+    color: '#ec4899',
+    level: 'L3',
+  },
+  {
+    key: 'inventory_manager',
+    label: '库存管理员',
+    subtitle: 'Inventory Manager',
+    icon: <ContainerOutlined />,
+    permissions: ['资源查询', '资源统计'],
+    color: '#f97316',
+    level: 'L2',
+  },
+  {
+    key: 'ttc_engineer',
+    label: '卫星测控工程师',
+    subtitle: 'Satellite TT&C Engineer',
+    icon: <AimOutlined />,
+    permissions: ['资源查询', '通道配置管理', '行波管状态管理'],
+    color: '#ef4444',
     level: 'L3',
   },
 ];
@@ -157,7 +200,6 @@ export default function RoleSelect() {
       >
         {/* 系统标题 */}
         <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
-          {/* 大 Logo + 光晕 */}
           <div
             style={{
               position: 'relative',
@@ -175,7 +217,6 @@ export default function RoleSelect() {
                 inset: 0,
                 borderRadius: '50%',
                 background: 'radial-gradient(circle, rgba(59,130,246,0.18) 0%, transparent 70%)',
-                animation: 'none',
               }}
             />
             <div
@@ -195,7 +236,6 @@ export default function RoleSelect() {
             </div>
           </div>
 
-          {/* 中文主标题 */}
           <div
             style={{
               fontSize: 34,
@@ -208,7 +248,6 @@ export default function RoleSelect() {
             射频矩阵管理系统
           </div>
 
-          {/* 英文副标题 */}
           <div
             style={{
               marginTop: 14,
@@ -233,14 +272,13 @@ export default function RoleSelect() {
             </span>
             <div style={{ width: 40, height: 1, background: 'linear-gradient(to right, #2563eb88, transparent)' }} />
           </div>
-
         </div>
 
         {/* 分隔线 */}
         <div
           style={{
             width: '100%',
-            maxWidth: 860,
+            maxWidth: 1080,
             display: 'flex',
             alignItems: 'center',
             gap: 16,
@@ -257,10 +295,10 @@ export default function RoleSelect() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: `repeat(auto-fit, minmax(240px, 1fr))`,
+            gridTemplateColumns: `repeat(3, minmax(0, 1fr))`,
             gap: 20,
             width: '100%',
-            maxWidth: 860,
+            maxWidth: 1080,
           }}
         >
           {roles.map((r) => (
@@ -286,23 +324,9 @@ export default function RoleSelect() {
             fontFamily: 'monospace',
           }}
         >
-          <span
-            style={{
-              display: 'inline-block',
-              width: 1,
-              height: 12,
-              background: '#1e3a5f',
-            }}
-          />
+          <span style={{ display: 'inline-block', width: 1, height: 12, background: '#1e3a5f' }} />
           RFMATRIX DEMO v0.1 · 数据仅供演示，禁止用于生产环境
-          <span
-            style={{
-              display: 'inline-block',
-              width: 1,
-              height: 12,
-              background: '#1e3a5f',
-            }}
-          />
+          <span style={{ display: 'inline-block', width: 1, height: 12, background: '#1e3a5f' }} />
         </div>
       </div>
     </div>
@@ -435,11 +459,9 @@ function RoleCard({
   );
 }
 
-/** 将 hex 颜色转为 "r, g, b" 字符串，用于 rgba() */
 function hexToRgb(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `${r}, ${g}, ${b}`;
 }
-

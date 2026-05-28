@@ -9,11 +9,15 @@ import type { Role } from '@/store/useStore';
 import { useState } from 'react';
 
 const roleLabels: Record<Role, { label: string; color: string }> = {
-  business:           { label: '商务经理',     color: 'blue' },
-  product:            { label: '产品经理',     color: 'green' },
-  project_manager:    { label: '项目经理',     color: 'cyan' },
-  delivery:           { label: '交付经理',     color: 'orange' },
-  satellite_engineer: { label: '卫星通信工程师', color: 'purple' },
+  business_manager:  { label: '商务经理',       color: 'blue' },
+  product_manager:   { label: '产品经理',       color: 'green' },
+  product_rd:        { label: '产品研发',       color: 'cyan' },
+  industry_manager:  { label: '行业经理',       color: 'gold' },
+  ops_engineer:      { label: '运控工程师',     color: 'lime' },
+  network_engineer:  { label: '网络系统工程师', color: 'purple' },
+  digital_engineer:  { label: '数字化工程师',   color: 'magenta' },
+  inventory_manager: { label: '库存管理员',     color: 'orange' },
+  ttc_engineer:      { label: '卫星测控工程师', color: 'red' },
 };
 
 export default function TopBar() {

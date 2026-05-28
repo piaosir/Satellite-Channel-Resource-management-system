@@ -1,7 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type Role = 'business' | 'product' | 'project_manager' | 'delivery' | 'satellite_engineer';
+export type Role =
+  | 'business_manager'
+  | 'product_manager'
+  | 'product_rd'
+  | 'industry_manager'
+  | 'ops_engineer'
+  | 'network_engineer'
+  | 'digital_engineer'
+  | 'inventory_manager'
+  | 'ttc_engineer';
 
 interface StoreState {
   role: Role | null;
