@@ -55,7 +55,7 @@ function toOffsetBw(rxActualStart: number, rxActualEnd: number, rxChannelStart: 
 export default function OccupationForm({
   open, onClose, onSuccess, editRecord, transponders, initTransponder,
 }: OccupationFormProps) {
-  const { role } = useStore();
+  const { role, bumpDataVersion } = useStore();
 
   // 表单字段：以起止频率为主，内部换算为 offset+bw 再存库
   const [form] = Form.useForm<{
@@ -247,6 +247,7 @@ export default function OccupationForm({
       });
     }
 
+    bumpDataVersion();
     onSuccess();
     onClose();
   }

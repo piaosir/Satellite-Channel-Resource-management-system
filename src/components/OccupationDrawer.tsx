@@ -45,7 +45,7 @@ interface OccupationDrawerProps {
 export default function OccupationDrawer({
   open, transponder, transponders = [], onClose, onOccChange, onTransponderChange,
 }: OccupationDrawerProps) {
-  const { role } = useStore();
+  const { role, bumpDataVersion } = useStore();
   const [occs, setOccs] = useState<FrequencyBlock[]>([]);
 
   // 表单 Modal 状态
@@ -83,6 +83,7 @@ export default function OccupationDrawer({
 
   async function handleDelete(id: number) {
     await deleteFrequencyBlock(id);
+    bumpDataVersion();
     reload();
     onOccChange?.();
     message.success('已删除');
@@ -93,6 +94,7 @@ export default function OccupationDrawer({
     setSavingName(true);
     try {
       await updateChannelCommonName(transponder.inputChannelId, nameInput.trim());
+      bumpDataVersion();
       message.success('通道名称已更新');
       setEditingName(false);
       onTransponderChange?.();

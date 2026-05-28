@@ -35,7 +35,7 @@ function occStatusColor(o: FrequencyBlock): string {
 
 export default function OccupationManage() {
   const navigate = useNavigate();
-  const { role, selectedSatelliteId } = useStore();
+  const { role, selectedSatelliteId, bumpDataVersion } = useStore();
 
   const [transponders, setTransponders] = useState<Transponder[]>([]);
   const [allOccs, setAllOccs]           = useState<FrequencyBlockFull[]>([]);
@@ -130,6 +130,7 @@ export default function OccupationManage() {
 
   async function handleDelete(id: number) {
     await deleteFrequencyBlock(id);
+    bumpDataVersion();
     message.success('已删除');
     reload();
   }
@@ -139,6 +140,7 @@ export default function OccupationManage() {
     setSavingName(true);
     try {
       await updateChannelCommonName(channelId, nameInput.trim());
+      bumpDataVersion();
       message.success('通道名称已更新');
       setEditingChannelId(null);
       reload();

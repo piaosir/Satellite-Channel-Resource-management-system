@@ -432,22 +432,106 @@ def update_channel_common_name(channel_id: int, body: dict):
         raise
     except Exception as e:
         raise db_error(e)
-# ── 修改通道常用名称 ───────────────────────────────────
-@app.patch("/api/channels/{channel_id}/common-name")
-def update_channel_common_name(channel_id: int, body: dict):
-    common_name = body.get("commonName")
-    if not common_name or not isinstance(common_name, str) or not common_name.strip():
-        raise HTTPException(status_code=422, detail="commonName is required")
+
+
+# ── 资源统计（设计带宽 vs 占用带宽，按频段 + 使用类型汇总） ────
+@app.get("/api/stats/{satellite_id}")
+def get_stats(satellite_id: int):
+    """
+    全卫星资源统计汇总，供资源统计页直接使用，避免前端大量 JOIN 计算。
+    返回：
+      byBand       — 各频段设计带宽 / 在用(P) / 回收(R)
+      byUsageType  — 使用类型分布（仅 P 状态）
+      summary      — 全局汇总数字
+    """
     try:
         with get_cursor() as cur:
-            cur.execute(
-                "UPDATE channel_info SET commonName = %s WHERE id = %s",
-                (common_name.strip(), channel_id),
-            )
-            if cur.rowcount == 0:
-                raise HTTPException(status_code=404, detail="channel not found")
-            return {"ok": True}
-    except HTTPException:
-        raise
+            # ① 各频段设计带宽（每个开关的输入通道带宽，按频段求和）
+            cur.execute("""
+                SELECT cg.band,
+                       SUM(ci.channelBandwidth) AS designBw
+                FROM matrix_switch_status    sw
+                JOIN  switch_matrix_info     m   ON m.id   = sw.matrixId
+                LEFT JOIN matrix_port_info   mpi ON mpi.id = sw.inputPortId
+                LEFT JOIN channel_info       ci  ON ci.id  = mpi.channelId
+                LEFT JOIN channel_group_info cg  ON cg.id  = ci.channelGroupId
+                WHERE m.satelliteId = %s
+                  AND cg.band IS NOT NULL
+                GROUP BY cg.band
+            """, (satellite_id,))
+            design_rows = cur.fetchall()
+
+            # ② 各频段已占用带宽（P / R 分开统计，通过相同 JOIN 链取 band）
+            cur.execute("""
+                SELECT cg.band,
+                       SUM(CASE WHEN fb.partitionStatus = 'P'
+                                THEN fb.occupiedBandwidth ELSE 0 END) AS usedBw,
+                       SUM(CASE WHEN fb.partitionStatus = 'R'
+                                THEN fb.occupiedBandwidth ELSE 0 END) AS recoveredBw
+                FROM frequency_block_realtime_status fb
+                JOIN  matrix_switch_status   sw  ON sw.id   = fb.switchId
+                JOIN  switch_matrix_info     m   ON m.id    = sw.matrixId
+                LEFT JOIN matrix_port_info   mpi ON mpi.id  = sw.inputPortId
+                LEFT JOIN channel_info       ci  ON ci.id   = mpi.channelId
+                LEFT JOIN channel_group_info cg  ON cg.id   = ci.channelGroupId
+                WHERE m.satelliteId = %s
+                  AND cg.band IS NOT NULL
+                GROUP BY cg.band
+            """, (satellite_id,))
+            occ_rows = cur.fetchall()
+
+            # ③ 使用类型分布（仅 P 状态）
+            cur.execute("""
+                SELECT COALESCE(fb.usageType, '未分类') AS usageType,
+                       SUM(fb.occupiedBandwidth)         AS bw
+                FROM frequency_block_realtime_status fb
+                JOIN switch_matrix_info m ON m.id = (
+                    SELECT matrixId FROM matrix_switch_status WHERE id = fb.switchId
+                )
+                WHERE m.satelliteId = %s
+                  AND fb.partitionStatus = 'P'
+                GROUP BY fb.usageType
+            """, (satellite_id,))
+            type_rows = cur.fetchall()
+
+        design_map = {r["band"]: float(r["designBw"] or 0) for r in design_rows}
+        occ_map = {
+            r["band"]: {
+                "usedBw":      float(r["usedBw"]      or 0),
+                "recoveredBw": float(r["recoveredBw"] or 0),
+            }
+            for r in occ_rows
+        }
+        all_bands = sorted(set(list(design_map) + list(occ_map)))
+
+        by_band: list[dict] = []
+        total_design = total_used = total_recovered = 0.0
+        for band in all_bands:
+            d  = design_map.get(band, 0.0)
+            o  = occ_map.get(band, {"usedBw": 0.0, "recoveredBw": 0.0})
+            u, rv = o["usedBw"], o["recoveredBw"]
+            by_band.append({
+                "band":        band,
+                "designBw":    round(d,  3),
+                "usedBw":      round(u,  3),
+                "recoveredBw": round(rv, 3),
+            })
+            total_design    += d
+            total_used      += u
+            total_recovered += rv
+
+        return {
+            "byBand": by_band,
+            "byUsageType": [
+                {"usageType": r["usageType"], "bw": round(float(r["bw"] or 0), 3)}
+                for r in type_rows
+            ],
+            "summary": {
+                "totalDesignBw":   round(total_design,              3),
+                "usedBw":          round(total_used,                3),
+                "recoveredBw":     round(total_recovered,           3),
+                "totalOccupiedBw": round(total_used + total_recovered, 3),
+            },
+        }
     except Exception as e:
         raise db_error(e)

@@ -1,5 +1,23 @@
 import type { Satellite, Transponder, FrequencyBlock, FrequencyBlockFull } from '@/types';
 
+export interface BandStat {
+  band: string;
+  designBw: number;
+  usedBw: number;
+  recoveredBw: number;
+}
+
+export interface BandwidthStats {
+  byBand: BandStat[];
+  byUsageType: { usageType: string; bw: number }[];
+  summary: {
+    totalDesignBw: number;
+    usedBw: number;
+    recoveredBw: number;
+    totalOccupiedBw: number;
+  };
+}
+
 const BASE = '/api';
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -60,6 +78,10 @@ export const updateChannelCommonName = (
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ commonName }),
   });
+
+// ── 资源统计（设计带宽 / 在用带宽 / 使用类型，服务端聚合） ─────
+export const fetchStats = (satelliteId: number): Promise<BandwidthStats> =>
+  apiFetch(`/stats/${satelliteId}`);
 
 // ── 冲突检测用：某开关的占用列表（排除指定记录 ID） ──────────
 export async function fetchFrequencyBlocksForConflict(

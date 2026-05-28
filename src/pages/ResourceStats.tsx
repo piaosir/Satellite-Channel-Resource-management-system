@@ -1,50 +1,8 @@
 import { useEffect, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { useStore } from '@/store/useStore';
-import { fetchFrequencyBlocksBySatellite, fetchTransponders } from '@/api';
-import type { FrequencyBlockFull, Transponder } from '@/types';
-
-interface Stats {
-  totalBw: number;
-  usedBw: number;
-  recoveredBw: number;
-  byBand: Record<string, number>;
-  byUsageType: Record<string, number>;
-  designBwByBand: Record<string, number>;
-  occupiedBwByBand: Record<string, number>;
-}
-
-function calcStats(blocks: FrequencyBlockFull[], transponders: Transponder[]): Stats {
-  let totalBw = 0, usedBw = 0, recoveredBw = 0;
-  const byBand: Record<string, number> = {};
-  const byUsageType: Record<string, number> = {};
-  const occupiedBwByBand: Record<string, number> = {};
-
-  for (const b of blocks) {
-    const bw = b.occupiedBandwidth ?? 0;
-    totalBw += bw;
-    if (b.partitionStatus === 'P') usedBw += bw;
-    else recoveredBw += bw;
-
-    const band = b.band ?? '未知';
-    byBand[band] = (byBand[band] ?? 0) + bw;
-    occupiedBwByBand[band] = (occupiedBwByBand[band] ?? 0) + bw;
-
-    if (b.partitionStatus === 'P') {
-      const type = b.usageType ?? '未分类';
-      byUsageType[type] = (byUsageType[type] ?? 0) + bw;
-    }
-  }
-
-  // 总设计带宽：各转发器 channelBw 按频段求和
-  const designBwByBand: Record<string, number> = {};
-  for (const t of transponders) {
-    const band = t.band ?? '未知';
-    designBwByBand[band] = (designBwByBand[band] ?? 0) + (t.channelBw ?? 0);
-  }
-
-  return { totalBw, usedBw, recoveredBw, byBand, byUsageType, designBwByBand, occupiedBwByBand };
-}
+import { fetchStats } from '@/api';
+import type { BandwidthStats } from '@/api';
 
 const cardStyle: React.CSSProperties = {
   background: '#1e293b',
@@ -56,99 +14,34 @@ const cardStyle: React.CSSProperties = {
 };
 
 export default function ResourceStats() {
-  const { selectedSatelliteId } = useStore();
-  const [stats, setStats] = useState<Stats | null>(null);
+  const { selectedSatelliteId, dataVersion } = useStore();
+  const [stats, setStats] = useState<BandwidthStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!selectedSatelliteId) return;
     setLoading(true);
-    Promise.all([
-      fetchFrequencyBlocksBySatellite(selectedSatelliteId),
-      fetchTransponders(selectedSatelliteId),
-    ])
-      .then(([blocks, transponders]) => setStats(calcStats(blocks, transponders)))
+    fetchStats(selectedSatelliteId)
+      .then(setStats)
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [selectedSatelliteId]);
+  }, [selectedSatelliteId, dataVersion]);
 
-  const usedRate = stats && stats.totalBw > 0
-    ? ((stats.usedBw / stats.totalBw) * 100).toFixed(1)
+  const summary = stats?.summary;
+  const totalOccupied = summary?.totalOccupiedBw ?? 0;
+  const usedRate = totalOccupied > 0
+    ? (((summary?.usedBw ?? 0) / totalOccupied) * 100).toFixed(1)
     : '0.0';
-  const recoveredRate = stats && stats.totalBw > 0
-    ? ((stats.recoveredBw / stats.totalBw) * 100).toFixed(1)
+  const recoveredRate = totalOccupied > 0
+    ? (((summary?.recoveredBw ?? 0) / totalOccupied) * 100).toFixed(1)
     : '0.0';
 
-  const pieOption = stats
-    ? {
-        backgroundColor: 'transparent',
-        tooltip: { trigger: 'item', formatter: '{b}: {c} MHz ({d}%)' },
-        legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 12 } },
-        series: [
-          {
-            type: 'pie',
-            radius: ['40%', '65%'],
-            center: ['50%', '44%'],
-            data: Object.entries(stats.byBand).map(([name, value]) => ({ name, value: +value.toFixed(2) })),
-            label: { show: true, color: '#94a3b8', fontSize: 12 },
-            itemStyle: { borderRadius: 4, borderColor: '#0f172a', borderWidth: 2 },
-          },
-        ],
-      }
-    : {};
-
-  const barOption = stats
-    ? {
-        backgroundColor: 'transparent',
-        tooltip: { trigger: 'axis' },
-        grid: { left: 60, right: 20, top: 20, bottom: 40 },
-        xAxis: {
-          type: 'category',
-          data: Object.keys(stats.byUsageType),
-          axisLabel: { color: '#94a3b8', fontSize: 12 },
-          axisLine: { lineStyle: { color: '#334155' } },
-        },
-        yAxis: {
-          type: 'value',
-          name: 'MHz',
-          nameTextStyle: { color: '#64748b', fontSize: 11 },
-          axisLabel: { color: '#94a3b8', fontSize: 11 },
-          splitLine: { lineStyle: { color: '#1e293b' } },
-        },
-        series: [
-          {
-            type: 'bar',
-            data: Object.values(stats.byUsageType).map((v) => +v.toFixed(2)),
-            barMaxWidth: 60,
-            itemStyle: {
-              color: {
-                type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-                colorStops: [
-                  { offset: 0, color: '#3b82f6' },
-                  { offset: 1, color: '#1d4ed8' },
-                ],
-              },
-              borderRadius: [4, 4, 0, 0],
-            },
-          },
-        ],
-      }
-    : {};
-
-  // 频段占用 vs 设计带宽对比图（垂直堆叠柱图）
+  // 频段占用 vs 设计带宽对比图
   const bandCompareOption = (() => {
-    if (!stats) return {};
-    const allBands = [...new Set([
-      ...Object.keys(stats.designBwByBand),
-      ...Object.keys(stats.occupiedBwByBand),
-    ])].sort();
-
-    const designVals   = allBands.map((b) => +(stats.designBwByBand[b]  ?? 0).toFixed(2));
-    const occupiedVals = allBands.map((b) => +(stats.occupiedBwByBand[b] ?? 0).toFixed(2));
-    const freeVals     = allBands.map((b) => {
-      const free = (stats.designBwByBand[b] ?? 0) - (stats.occupiedBwByBand[b] ?? 0);
-      return +Math.max(free, 0).toFixed(2);
-    });
+    if (!stats || stats.byBand.length === 0) return {};
+    const bands    = stats.byBand.map((b) => b.band);
+    const usedVals = stats.byBand.map((b) => +b.usedBw.toFixed(2));
+    const freeVals = stats.byBand.map((b) => +Math.max(0, b.designBw - b.usedBw).toFixed(2));
 
     return {
       backgroundColor: 'transparent',
@@ -157,16 +50,15 @@ export default function ResourceStats() {
         axisPointer: { type: 'shadow' },
         formatter: (params: Array<{ dataIndex: number }>) => {
           const i = params[0]?.dataIndex ?? 0;
-          const band    = allBands[i] ?? '';
-          const design  = designVals[i] ?? 0;
-          const occ     = occupiedVals[i] ?? 0;
-          const free    = freeVals[i] ?? 0;
-          const pct     = design > 0 ? ((occ / design) * 100).toFixed(1) : '0.0';
+          const b = stats.byBand[i];
+          if (!b) return '';
+          const pct = b.designBw > 0 ? ((b.usedBw / b.designBw) * 100).toFixed(1) : '0.0';
           return [
-            `<b>${band} 频段</b>`,
-            `总设计带宽：<b>${design} MHz</b>`,
-            `已占用：<b style="color:#60a5fa">${occ} MHz</b>`,
-            `未占用：<span style="color:#475569">${free} MHz</span>`,
+            `<b>${b.band} 频段</b>`,
+            `总设计带宽：<b>${b.designBw} MHz</b>`,
+            `已占用(P)：<b style="color:#60a5fa">${b.usedBw} MHz</b>`,
+            `回收(R)：<span style="color:#f59e0b">${b.recoveredBw} MHz</span>`,
+            `未占用：<span style="color:#475569">${Math.max(0, b.designBw - b.usedBw).toFixed(2)} MHz</span>`,
             `占用率：<b style="color:#22c55e">${pct}%</b>`,
           ].join('<br/>');
         },
@@ -184,13 +76,8 @@ export default function ResourceStats() {
       grid: { left: 64, right: 24, top: 36, bottom: 52 },
       xAxis: {
         type: 'category',
-        data: allBands,
-        axisLabel: {
-          color: '#94a3b8',
-          fontSize: 14,
-          fontWeight: 600,
-          fontFamily: 'monospace',
-        },
+        data: bands,
+        axisLabel: { color: '#94a3b8', fontSize: 14, fontWeight: 600, fontFamily: 'monospace' },
         axisLine: { lineStyle: { color: '#334155' } },
         axisTick: { show: false },
       },
@@ -208,7 +95,7 @@ export default function ResourceStats() {
           name: '已占用带宽',
           type: 'bar',
           stack: 'bw',
-          data: occupiedVals,
+          data: usedVals,
           barMaxWidth: 96,
           barCategoryGap: '48%',
           z: 3,
@@ -229,8 +116,7 @@ export default function ResourceStats() {
             fontSize: 12,
             fontWeight: 600,
             fontFamily: 'monospace',
-            formatter: (p: { value: number }) =>
-              p.value >= 50 ? `${p.value} MHz` : '',
+            formatter: (p: { value: number }) => p.value >= 50 ? `${p.value} MHz` : '',
           },
         },
         {
@@ -250,25 +136,15 @@ export default function ResourceStats() {
             show: true,
             position: 'top',
             distance: 10,
-            formatter: (p: { dataIndex: number; value: number }) => {
-              const i = p.dataIndex;
-              const design = designVals[i] ?? 0;
-              const occ    = occupiedVals[i] ?? 0;
-              const pct    = design > 0 ? ((occ / design) * 100).toFixed(1) : '0.0';
-              return `{d|${design} MHz}   {r|${pct}%}`;
+            formatter: (p: { dataIndex: number }) => {
+              const b = stats.byBand[p.dataIndex];
+              if (!b) return '';
+              const pct = b.designBw > 0 ? ((b.usedBw / b.designBw) * 100).toFixed(1) : '0.0';
+              return `{d|${b.designBw} MHz}   {r|${pct}%}`;
             },
             rich: {
-              d: {
-                color: '#64748b',
-                fontSize: 11,
-                fontFamily: 'monospace',
-              },
-              r: {
-                color: '#22c55e',
-                fontSize: 13,
-                fontWeight: 'bold',
-                fontFamily: 'monospace',
-              },
+              d: { color: '#64748b', fontSize: 11, fontFamily: 'monospace' },
+              r: { color: '#22c55e', fontSize: 13, fontWeight: 'bold', fontFamily: 'monospace' },
             },
           },
         },
@@ -276,8 +152,67 @@ export default function ResourceStats() {
     };
   })();
 
-  const hasBandData = stats &&
-    (Object.keys(stats.designBwByBand).length > 0 || Object.keys(stats.occupiedBwByBand).length > 0);
+  // 按频段占用分布饼图（P + R 合计）
+  const pieOption = (() => {
+    if (!stats) return {};
+    const data = stats.byBand
+      .map((b) => ({ name: b.band, value: +(b.usedBw + b.recoveredBw).toFixed(2) }))
+      .filter((d) => d.value > 0);
+    if (data.length === 0) return {};
+    return {
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'item', formatter: '{b}: {c} MHz ({d}%)' },
+      legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 12 } },
+      series: [{
+        type: 'pie',
+        radius: ['40%', '65%'],
+        center: ['50%', '44%'],
+        data,
+        label: { show: true, color: '#94a3b8', fontSize: 12 },
+        itemStyle: { borderRadius: 4, borderColor: '#0f172a', borderWidth: 2 },
+      }],
+    };
+  })();
+
+  // 按使用类型统计柱图（仅 P 状态，由后端过滤）
+  const barOption = (() => {
+    if (!stats || stats.byUsageType.length === 0) return {};
+    return {
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis' },
+      grid: { left: 60, right: 20, top: 20, bottom: 40 },
+      xAxis: {
+        type: 'category',
+        data: stats.byUsageType.map((t) => t.usageType),
+        axisLabel: { color: '#94a3b8', fontSize: 12 },
+        axisLine: { lineStyle: { color: '#334155' } },
+      },
+      yAxis: {
+        type: 'value',
+        name: 'MHz',
+        nameTextStyle: { color: '#64748b', fontSize: 11 },
+        axisLabel: { color: '#94a3b8', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#1e293b' } },
+      },
+      series: [{
+        type: 'bar',
+        data: stats.byUsageType.map((t) => +t.bw.toFixed(2)),
+        barMaxWidth: 60,
+        itemStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: '#3b82f6' },
+              { offset: 1, color: '#1d4ed8' },
+            ],
+          },
+          borderRadius: [4, 4, 0, 0],
+        },
+      }],
+    };
+  })();
+
+  const hasBandData = stats && stats.byBand.length > 0;
 
   return (
     <div style={{ padding: '40px 48px 32px', color: '#e2e8f0' }}>
@@ -293,9 +228,9 @@ export default function ResourceStats() {
         <div style={cardStyle}>
           <div style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>总占用带宽</div>
           <div style={{ color: '#3b82f6', fontSize: 32, fontWeight: 700, fontFamily: 'monospace' }}>
-            {loading ? '—' : `${stats?.totalBw.toFixed(1) ?? 0}`}
+            {loading ? '—' : (summary?.totalOccupiedBw.toFixed(1) ?? 0)}
           </div>
-          <div style={{ color: '#475569', fontSize: 12, marginTop: 4 }}>MHz</div>
+          <div style={{ color: '#475569', fontSize: 12, marginTop: 4 }}>MHz（P + R）</div>
         </div>
         <div style={cardStyle}>
           <div style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>在用率</div>
@@ -314,25 +249,23 @@ export default function ResourceStats() {
       </div>
 
       {/* 频段占用 vs 设计带宽对比图（全宽） */}
-      <div
-        style={{
-          background: '#1e293b',
-          border: '1px solid #334155',
-          borderRadius: 12,
-          padding: '20px 24px',
-          marginBottom: 24,
-        }}
-      >
+      <div style={{
+        background: '#1e293b',
+        border: '1px solid #334155',
+        borderRadius: 12,
+        padding: '20px 24px',
+        marginBottom: 24,
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
           <div style={{ color: '#94a3b8', fontSize: 13, fontWeight: 600 }}>
             各频段占用带宽 vs 总设计带宽
           </div>
           <div style={{ color: '#475569', fontSize: 11 }}>
-            （灰柱：总设计带宽 · 蓝柱：已占用带宽 · 绿线：占用率）
+            （灰柱：总设计带宽 · 蓝柱：已占用带宽(P) · 绿色：占用率）
           </div>
         </div>
         {!loading && hasBandData ? (
-          <ReactECharts option={bandCompareOption} style={{ height: 260 }} />
+          <ReactECharts option={bandCompareOption} style={{ height: 260 }} notMerge />
         ) : (
           <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
             {loading ? '加载中...' : '暂无数据'}
@@ -342,21 +275,15 @@ export default function ResourceStats() {
 
       {/* 频段分布 + 使用类型图表 */}
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        <div
-          style={{
-            flex: 1,
-            minWidth: 320,
-            background: '#1e293b',
-            border: '1px solid #334155',
-            borderRadius: 12,
-            padding: '20px 24px',
-          }}
-        >
+        <div style={{
+          flex: 1, minWidth: 320,
+          background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: '20px 24px',
+        }}>
           <div style={{ color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
             按频段占用分布（MHz）
           </div>
-          {!loading && stats && Object.keys(stats.byBand).length > 0 ? (
-            <ReactECharts option={pieOption} style={{ height: 300 }} />
+          {!loading && stats && stats.byBand.some((b) => b.usedBw + b.recoveredBw > 0) ? (
+            <ReactECharts option={pieOption} style={{ height: 300 }} notMerge />
           ) : (
             <div style={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
               {loading ? '加载中...' : '暂无数据'}
@@ -364,21 +291,15 @@ export default function ResourceStats() {
           )}
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            minWidth: 320,
-            background: '#1e293b',
-            border: '1px solid #334155',
-            borderRadius: 12,
-            padding: '20px 24px',
-          }}
-        >
+        <div style={{
+          flex: 1, minWidth: 320,
+          background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: '20px 24px',
+        }}>
           <div style={{ color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
             按使用类型统计（在用，MHz）
           </div>
-          {!loading && stats && Object.keys(stats.byUsageType).length > 0 ? (
-            <ReactECharts option={barOption} style={{ height: 300 }} />
+          {!loading && stats && stats.byUsageType.length > 0 ? (
+            <ReactECharts option={barOption} style={{ height: 300 }} notMerge />
           ) : (
             <div style={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#475569' }}>
               {loading ? '加载中...' : '暂无在用数据'}

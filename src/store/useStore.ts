@@ -15,8 +15,10 @@ export type Role =
 interface StoreState {
   role: Role | null;
   selectedSatelliteId: number | null;
+  dataVersion: number;
   setRole: (role: Role) => void;
   setSatellite: (id: number) => void;
+  bumpDataVersion: () => void;
 }
 
 export const useStore = create<StoreState>()(
@@ -24,8 +26,10 @@ export const useStore = create<StoreState>()(
     (set) => ({
       role: null,
       selectedSatelliteId: null,
+      dataVersion: 0,
       setRole: (role) => set({ role }),
       setSatellite: (id) => set({ selectedSatelliteId: id }),
+      bumpDataVersion: () => set((s) => ({ dataVersion: s.dataVersion + 1 })),
     }),
     { name: 'rfmatrix-store' },
   ),
