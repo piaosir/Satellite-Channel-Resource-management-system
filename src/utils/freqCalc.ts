@@ -4,7 +4,8 @@ import type { FrequencyBlock } from '@/types';
  * 格式化频率数值：最多保留 3 位小数，去除尾零
  * 避免浮点精度问题导致显示如 14498.000000001
  */
-export function fmtFreq(v: number): string {
+export function fmtFreq(v: number | null | undefined): string {
+  if (v == null) return '—';
   return parseFloat(v.toFixed(3)).toString();
 }
 
