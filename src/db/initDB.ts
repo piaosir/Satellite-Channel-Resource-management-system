@@ -3,11 +3,17 @@ import type { Database, SqlJsStatic } from 'sql.js';
 // sql.js 通过 CDN <script> 加载，全局函数名即 initSqlJs
 declare const initSqlJs: (config: { locateFile: (f: string) => string }) => Promise<SqlJsStatic>;
 
+// ── DB 版本 ───────────────────────────────────────────────────
+// 每次 /public/sql/rfmatrix_complete.sql 有结构或数据变动时，将此值递增。
+// 版本变化会使所有已缓存的 IndexedDB 数据失效，下次访问自动重新从 SQL 文件初始化。
+// 例如：'1' → '2' → '3' ...
+export const DB_VERSION = '1';
+
 // ── IndexedDB 常量 ────────────────────────────────────────────
 const IDB_NAME    = 'rfmatrix_storage';
 const IDB_VERSION = 1;
 const STORE_NAME  = 'databases';
-const DB_KEY      = 'rfmatrix_db_v1';
+const DB_KEY      = `rfmatrix_db_v${DB_VERSION}`;  // 版本化 key：版本变化自动触发缓存失效
 const LS_KEY      = 'rfmatrix_db_v1'; // 旧版 localStorage key，用于迁移
 
 let db: Database | null = null;

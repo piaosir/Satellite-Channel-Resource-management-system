@@ -22,6 +22,7 @@ RF Matrix API — Python / FastAPI 后端
     DELETE /api/frequency-blocks/{fb_id}
 """
 
+import logging
 import os
 import time
 from contextlib import contextmanager
@@ -36,10 +37,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from migrate import run_migrations
+
 load_dotenv()
+
+log = logging.getLogger(__name__)
 
 # ── FastAPI 应用 ───────────────────────────────────────────────
 app = FastAPI(title="RF Matrix API", version="1.0.0")
+
+
+@app.on_event("startup")
+async def _auto_migrate():
+    """启动时自动应用尚未执行的数据库迁移。"""
+    try:
+        run_migrations(verbose=False)
+    except Exception as exc:
+        log.critical("数据库迁移失败，请检查 migrations/ 目录：%s", exc, exc_info=True)
 
 app.add_middleware(
     CORSMiddleware,
