@@ -1,67 +1,104 @@
-import { useState } from 'react';
-import { Table, Tag, Input, Button, Space } from 'antd';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { useEffect, useMemo, useState } from 'react';
+import { Table, Tag, Input, Select, Tooltip } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { fetchContracts } from '@/api';
+import type { ContractRecord } from '@/types';
 
-interface Contract {
-  id: string;
-  contractNo: string;
-  customer: string;
-  satellite: string;
-  band: string;
-  bandwidth: number;
-  period: string;
-  status: 'active' | 'expired' | 'reviewing';
+const fmtDate = (s: string | null) => (s ? s.slice(0, 10) : '—');
+
+function exclusiveColor(v: string | null): string {
+  if (!v) return 'default';
+  if (v.includes('独占') || v.includes('独享')) return 'blue';
+  if (v.includes('共享')) return 'cyan';
+  if (v.includes('主')) return 'geekblue';
+  return 'default';
 }
 
-const MOCK_DATA: Contract[] = [
-  { id: '1', contractNo: 'HT-2024-001', customer: '中国电信卫星', satellite: '亚太6D', band: 'Ku', bandwidth: 54, period: '2024-01 ~ 2025-12', status: 'active' },
-  { id: '2', contractNo: 'HT-2024-002', customer: '国家广播电视总局', satellite: '中星9B', band: 'Ku', bandwidth: 36, period: '2024-03 ~ 2026-02', status: 'active' },
-  { id: '3', contractNo: 'HT-2023-008', customer: '中国联通', satellite: '亚太6D', band: 'C', bandwidth: 72, period: '2023-06 ~ 2024-05', status: 'expired' },
-  { id: '4', contractNo: 'HT-2024-015', customer: '中国移动卫星', satellite: '天通一号', band: 'Ku', bandwidth: 36, period: '2024-08 ~ 2026-07', status: 'reviewing' },
-  { id: '5', contractNo: 'HT-2024-022', customer: '北京航天宏图', satellite: '中星9B', band: 'EKu', bandwidth: 18, period: '2024-09 ~ 2025-08', status: 'active' },
-  { id: '6', contractNo: 'HT-2024-031', customer: '中国卫通集团', satellite: '亚太6D', band: 'Ku', bandwidth: 108, period: '2024-11 ~ 2027-10', status: 'reviewing' },
-];
-
-const statusMap: Record<Contract['status'], { label: string; color: string }> = {
-  active:    { label: '生效中', color: 'green' },
-  expired:   { label: '已到期', color: 'default' },
-  reviewing: { label: '审核中', color: 'orange' },
-};
-
-const columns: ColumnsType<Contract> = [
-  { title: '合约编号', dataIndex: 'contractNo', key: 'contractNo', width: 160, render: (v) => <span style={{ fontFamily: 'monospace', color: '#93c5fd' }}>{v}</span> },
-  { title: '客户名称', dataIndex: 'customer', key: 'customer', width: 180 },
-  { title: '卫星', dataIndex: 'satellite', key: 'satellite', width: 120 },
-  { title: '频段', dataIndex: 'band', key: 'band', width: 80 },
-  { title: '带宽 (MHz)', dataIndex: 'bandwidth', key: 'bandwidth', width: 110, align: 'right', render: (v) => <span style={{ fontFamily: 'monospace' }}>{v}</span> },
-  { title: '合约周期', dataIndex: 'period', key: 'period', width: 200 },
+const columns: ColumnsType<ContractRecord> = [
   {
-    title: '状态', dataIndex: 'status', key: 'status', width: 100,
-    render: (v: Contract['status']) => (
-      <Tag color={statusMap[v].color}>{statusMap[v].label}</Tag>
+    title: '甲方', dataIndex: 'partyA', key: 'partyA', width: 200, ellipsis: true,
+    render: (v) => <span style={{ color: '#e2e8f0' }}>{v ?? '—'}</span>,
+  },
+  { title: '商品名称', dataIndex: 'productName', key: 'productName', width: 160, ellipsis: true },
+  {
+    title: '合同编号', dataIndex: 'contractNo', key: 'contractNo', width: 170,
+    render: (v) => <span style={{ fontFamily: 'monospace', color: '#93c5fd', fontSize: 12 }}>{v ?? '—'}</span>,
+  },
+  { title: '卫星', dataIndex: 'satelliteCode', key: 'satelliteCode', width: 80 },
+  {
+    title: '频率块代码', dataIndex: 'frequencyBlockCode2', key: 'frequencyBlockCode2', width: 240, ellipsis: true,
+    render: (v: string | null) =>
+      v ? (
+        <Tooltip title={v}>
+          <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#64748b' }}>{v}</span>
+        </Tooltip>
+      ) : '—',
+  },
+  {
+    title: '独占/共享', dataIndex: 'exclusiveType', key: 'exclusiveType', width: 110,
+    render: (v: string | null) => (v ? <Tag color={exclusiveColor(v)}>{v}</Tag> : '—'),
+  },
+  {
+    title: '带宽 (MHz)', dataIndex: 'usedBandwidth', key: 'usedBandwidth', width: 100, align: 'right',
+    render: (v) => <span style={{ fontFamily: 'monospace' }}>{v ?? '—'}</span>,
+  },
+  {
+    title: '合约周期', key: 'period', width: 190,
+    render: (_, r) => (
+      <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+        {fmtDate(r.startTime)} ~ {fmtDate(r.endTime)}
+      </span>
     ),
   },
   {
-    title: '操作', key: 'action', width: 120,
-    render: () => (
-      <Space size="small">
-        <Button size="small" type="text" style={{ color: '#3b82f6' }}>查看</Button>
-        <Button size="small" type="text" style={{ color: '#64748b' }}>编辑</Button>
-      </Space>
+    title: '上行 (MHz)', key: 'uplink', width: 170,
+    render: (_, r) => (
+      <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+        <span style={{ color: '#64748b' }}>{r.uplinkBeamCode ?? ''} {r.uplinkPolarization ?? ''}</span>{' '}
+        {r.uplinkStartFreq ?? '—'}~{r.uplinkEndFreq ?? '—'}
+      </span>
+    ),
+  },
+  {
+    title: '下行 (MHz)', key: 'downlink', width: 170,
+    render: (_, r) => (
+      <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+        <span style={{ color: '#64748b' }}>{r.downlinkBeamCode ?? ''} {r.downlinkPolarization ?? ''}</span>{' '}
+        {r.downlinkStartFreq ?? '—'}~{r.downlinkEndFreq ?? '—'}
+      </span>
     ),
   },
 ];
 
 export default function ContractRecords() {
+  const [data, setData] = useState<ContractRecord[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [satFilter, setSatFilter] = useState<string | null>(null);
 
-  const filtered = MOCK_DATA.filter(
-    (r) =>
-      r.contractNo.includes(search) ||
-      r.customer.includes(search) ||
-      r.satellite.includes(search),
+  useEffect(() => {
+    fetchContracts()
+      .then(setData)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const satellites = useMemo(
+    () => [...new Set(data.map((d) => d.satelliteCode).filter(Boolean))] as string[],
+    [data],
   );
+
+  const filtered = data.filter((r) => {
+    if (satFilter && r.satelliteCode !== satFilter) return false;
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (
+      (r.partyA ?? '').toLowerCase().includes(s) ||
+      (r.contractNo ?? '').toLowerCase().includes(s) ||
+      (r.frequencyBlockCode2 ?? '').toLowerCase().includes(s)
+    );
+  });
 
   return (
     <div style={{ padding: '40px 48px 32px', color: '#e2e8f0' }}>
@@ -72,31 +109,32 @@ export default function ContractRecords() {
         合约记录管理
       </h1>
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
         <Input
           prefix={<SearchOutlined style={{ color: '#475569' }} />}
-          placeholder="搜索合约编号、客户、卫星..."
+          placeholder="搜索甲方、合同编号、频率块..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: 300 }}
           allowClear
         />
-        <div style={{ flex: 1 }} />
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          style={{ background: '#2563eb', borderColor: '#2563eb' }}
-        >
-          新建合约
-        </Button>
+        <Select
+          placeholder="按卫星筛选"
+          allowClear
+          style={{ width: 140 }}
+          value={satFilter}
+          onChange={(v) => setSatFilter(v ?? null)}
+          options={satellites.map((s) => ({ value: s, label: s }))}
+        />
       </div>
 
       <Table
         columns={columns}
         dataSource={filtered}
         rowKey="id"
-        pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条记录` }}
-        scroll={{ x: 1000 }}
+        loading={loading}
+        pagination={{ pageSize: 12, showTotal: (t) => `共 ${t} 条合约` }}
+        scroll={{ x: 1500 }}
         style={{ background: 'transparent' }}
       />
     </div>

@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Tag } from 'antd';
 import {
   SearchOutlined,
   BarChartOutlined,
@@ -13,9 +14,18 @@ import {
   FileExcelOutlined,
 } from '@ant-design/icons';
 import { useStore } from '@/store/useStore';
-import { fetchSatellites } from '@/api';
+import { fetchSatellites, fetchSatelliteDetail } from '@/api';
 import { PERMISSIONS } from '@/utils/roleGuard';
 import type { Role } from '@/store/useStore';
+import type { Satellite } from '@/types';
+
+// 卫星状态 → 标签颜色
+const SAT_STATUS_COLOR: Record<string, string> = {
+  在轨运营: 'green',
+  在建: 'blue',
+  停止服务: 'default',
+  离轨: 'red',
+};
 
 interface FuncCard {
   icon: React.ReactNode;
@@ -108,9 +118,62 @@ const ALL_CARDS: Array<FuncCard & { check: (r: Role) => boolean }> = [
   },
 ];
 
+function ProfileField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div style={{ minWidth: 110 }}>
+      <div style={{ color: '#475569', fontSize: 11, marginBottom: 4 }}>{label}</div>
+      <div style={{ color: '#cbd5e1', fontSize: 13, fontWeight: 500, whiteSpace: 'pre-line' }}>
+        {value || '—'}
+      </div>
+    </div>
+  );
+}
+
+function SatelliteProfile({ sat }: { sat: Satellite }) {
+  return (
+    <div
+      style={{
+        background: '#1e293b',
+        border: '1px solid #334155',
+        borderRadius: 12,
+        padding: '20px 24px',
+        marginBottom: 36,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+        <span style={{ color: '#e2e8f0', fontSize: 18, fontWeight: 700 }}>{sat.satelliteName}</span>
+        <span style={{ color: '#3b82f6', fontFamily: 'monospace', fontSize: 13 }}>{sat.satelliteCode}</span>
+        {sat.statusText && <Tag color={SAT_STATUS_COLOR[sat.statusText] ?? 'default'}>{sat.statusText}</Tag>}
+        {sat.ownership && (
+          <Tag color={sat.ownership === '自有' ? 'geekblue' : 'purple'}>{sat.ownership}</Tag>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 32, rowGap: 16, flexWrap: 'wrap', marginBottom: sat.coverage ? 16 : 0 }}>
+        <ProfileField label="轨道位置" value={sat.orbitPosition} />
+        <ProfileField label="卫星平台" value={sat.platform} />
+        <ProfileField label="转发器数量" value={sat.transponderCount} />
+        <ProfileField label="发射时间" value={sat.launchDate} />
+        <ProfileField label="设计寿命" value={sat.designLife} />
+        <ProfileField label="极化方式" value={sat.polarization} />
+        <ProfileField label="制造商" value={sat.manufacturer} />
+        <ProfileField label="位保精度" value={sat.stationKeepingAccuracy} />
+      </div>
+      {sat.coverage && (
+        <div style={{ borderTop: '1px solid #283548', paddingTop: 14 }}>
+          <div style={{ color: '#475569', fontSize: 11, marginBottom: 4 }}>覆盖范围</div>
+          <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+            {sat.coverage}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { role, selectedSatelliteId, setSatellite } = useStore();
+  const [sat, setSat] = useState<Satellite | null>(null);
 
   useEffect(() => {
     if (selectedSatelliteId) return;
@@ -118,6 +181,11 @@ export default function Dashboard() {
       if (list.length > 0) setSatellite(list[0].id);
     }).catch(console.error);
   }, [selectedSatelliteId, setSatellite]);
+
+  useEffect(() => {
+    if (!selectedSatelliteId) { setSat(null); return; }
+    fetchSatelliteDetail(selectedSatelliteId).then(setSat).catch(console.error);
+  }, [selectedSatelliteId]);
 
   const cards = role
     ? ALL_CARDS.filter((c) => c.check(role))
@@ -128,9 +196,12 @@ export default function Dashboard() {
       <h2 style={{ color: '#94a3b8', fontWeight: 400, fontSize: 14, margin: '0 0 8px', letterSpacing: 2 }}>
         功能选择
       </h2>
-      <h1 style={{ color: '#e2e8f0', fontSize: 28, fontWeight: 700, margin: '0 0 40px' }}>
+      <h1 style={{ color: '#e2e8f0', fontSize: 28, fontWeight: 700, margin: '0 0 28px' }}>
         工作台
       </h1>
+
+      {sat && <SatelliteProfile sat={sat} />}
+
       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
         {cards.map((c) => (
           <div

@@ -93,10 +93,12 @@ export default function TransponderTable({ transponders, occMap, onRowClick }: T
     () => [
       {
         title: '通道',
-        dataIndex: 'transponderName',
-        width: 90,
-        render: (_v, record) => <b style={{ color: '#e2e8f0' }}>{fmtChannelLabel(record)}</b>,
-        sorter: (a, b) => a.transponderName.localeCompare(b.transponderName),
+        dataIndex: 'inputChannelShortName',
+        width: 120,
+        render: (_v, record) => (
+          <b style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{fmtChannelLabel(record)}</b>
+        ),
+        sorter: (a, b) => fmtChannelLabel(a).localeCompare(fmtChannelLabel(b)),
       },
       {
         title: '上行频段',

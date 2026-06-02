@@ -36,28 +36,20 @@ export function fmtSwitchStatus(v: number | null | undefined): string {
   return v === 1 ? '开' : '关';
 }
 
-/** 通道显示名（含波束铰链 / 前返向括注）
- *  - 矩阵备注含"前向"/"返向" → `C1A（大理前向）`
- *  - 否则拼接入/出波束名  → `C1A（国土-国土）`
- *  - 均无有效信息则原样返回
+/** 通道显示名：入端口代码-出端口代码（如 `RC1A-TC1A`）
+ *  - 入/出端口短代码齐全 → `RC1A-TC1A`
+ *  - 仅有其一            → 取其一
+ *  - 均缺失              → 回退到常用名 transponderName
  */
 export function fmtChannelLabel(t: {
   transponderName: string;
-  matrixRemark?: string | null;
-  antennaName?: string | null;
-  txAntennaName?: string | null;
+  inputChannelShortName?: string | null;
+  outputChannelShortName?: string | null;
 }): string {
-  const name = t.transponderName;
-  if (t.matrixRemark && (t.matrixRemark.includes('前向') || t.matrixRemark.includes('返向'))) {
-    return `${name}（${t.matrixRemark}）`;
-  }
-  const rx = (t.antennaName ?? '').replace('波束', '').trim();
-  const tx = (t.txAntennaName ?? '').replace('波束', '').trim();
-  if (rx || tx) {
-    const beamPart = rx === tx ? rx : `${rx}-${tx}`;
-    return beamPart ? `${name}（${beamPart}）` : name;
-  }
-  return name;
+  const inp = t.inputChannelShortName?.trim();
+  const out = t.outputChannelShortName?.trim();
+  if (inp && out) return `${inp}-${out}`;
+  return inp || out || t.transponderName;
 }
 
 export function calcOccFreq(

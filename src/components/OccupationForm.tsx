@@ -291,7 +291,7 @@ export default function OccupationForm({
           fontSize: 12,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <b style={{ color: DARK.text }}>{activeTransponder.transponderName}</b>
+            <b style={{ color: DARK.text, fontFamily: 'monospace' }}>{fmtChannelLabel(activeTransponder)}</b>
             <Tag color={activeTransponder.band === 'Ku' ? 'blue' : activeTransponder.band === 'EKu' ? 'purple' : 'green'} style={{ margin: 0 }}>
               {activeTransponder.band}
             </Tag>

@@ -159,9 +159,44 @@ def list_satellites():
     try:
         with get_cursor() as cur:
             cur.execute(
-                "SELECT id, satelliteCode, satelliteName FROM satellite_info ORDER BY id"
+                """
+                SELECT id, satelliteCode, satelliteName,
+                       orbitPosition, statusText, coverage, transponderCount,
+                       beacon, polarization, launchDate, designLife, ownership,
+                       manufacturer, platform, attitudeStabilization,
+                       stationKeepingAccuracy, remark
+                FROM satellite_info
+                ORDER BY id
+                """
             )
             return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+# ── 卫星详情 ──────────────────────────────────────────────────
+@app.get("/api/satellites/{satellite_id}")
+def get_satellite(satellite_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, satelliteCode, satelliteName,
+                       orbitPosition, statusText, coverage, transponderCount,
+                       beacon, polarization, launchDate, designLife, ownership,
+                       manufacturer, platform, attitudeStabilization,
+                       stationKeepingAccuracy, remark
+                FROM satellite_info
+                WHERE id = %s
+                """,
+                (satellite_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="satellite not found")
+            return to_json([row])[0]
+    except HTTPException:
+        raise
     except Exception as e:
         raise db_error(e)
 
@@ -547,5 +582,160 @@ def get_stats(satellite_id: int):
                 "totalOccupiedBw": round(total_used + total_recovered, 3),
             },
         }
+    except Exception as e:
+        raise db_error(e)
+
+
+# ══════════════════════════════════════════════════════════════
+#  行波管 TWT 实时状态
+# ══════════════════════════════════════════════════════════════
+class TwtUpdate(BaseModel):
+    onOff:        Optional[str] = None
+    mutingStatus: Optional[str] = None
+    gainMode:     Optional[str] = None
+    gainLevel:    Optional[int] = None
+
+
+# ── 某卫星的 TWT 清单 ─────────────────────────────────────────
+@app.get("/api/twt/satellite/{satellite_id}")
+def list_twt(satellite_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, twtCodeLong, twtCodeShort, satelliteCode, satelliteId,
+                       unitCode, onOff, mutingStatus, gainMode, gainLevel,
+                       statusUpdateTime
+                FROM twt_realtime_status
+                WHERE satelliteId = %s
+                ORDER BY id
+                """,
+                (satellite_id,),
+            )
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+# ── 更新某 TWT 状态（测控操作） ───────────────────────────────
+@app.patch("/api/twt/{twt_id}")
+def update_twt(twt_id: int, body: TwtUpdate):
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=422, detail="no fields to update")
+    sets = ", ".join(f"{k} = %s" for k in fields)
+    params = list(fields.values()) + [int(time.time() * 1000), twt_id]
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                f"UPDATE twt_realtime_status SET {sets}, statusUpdateTime = %s WHERE id = %s",
+                params,
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="twt not found")
+            return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise db_error(e)
+
+
+# ══════════════════════════════════════════════════════════════
+#  通道属性（增益 / SFD）
+# ══════════════════════════════════════════════════════════════
+@app.get("/api/channel-attributes/satellite/{satellite_id}")
+def list_channel_attributes(satellite_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, switchCode, matrixCode, inputPortSeq, outputPortSeq,
+                       inputChannelShortName, outputChannelShortName, gainMode,
+                       currentLevel, startLevel, maxLevel, levelStep,
+                       startSfdRef, currentSfd, satelliteId, switchId
+                FROM channel_attribute_info
+                WHERE satelliteId = %s
+                ORDER BY matrixCode, inputPortSeq
+                """,
+                (satellite_id,),
+            )
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+# ══════════════════════════════════════════════════════════════
+#  开关组
+# ══════════════════════════════════════════════════════════════
+@app.get("/api/switch-groups/satellite/{satellite_id}")
+def list_switch_groups(satellite_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, switchGroupCode, switchCode, matrixCode,
+                       inputPortSeq, outputPortSeq, inputChannelShortName,
+                       outputChannelShortName, switchStatus, switchType,
+                       checkRule, satelliteId
+                FROM switch_group_info
+                WHERE satelliteId = %s
+                ORDER BY switchGroupCode, inputPortSeq
+                """,
+                (satellite_id,),
+            )
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+# ══════════════════════════════════════════════════════════════
+#  合约记录（新）
+# ══════════════════════════════════════════════════════════════
+@app.get("/api/contracts")
+def list_contracts(satellite: Optional[str] = None):
+    where = "WHERE satelliteCode = %s" if satellite else ""
+    params = (satellite,) if satellite else ()
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, remarkInfo, productInstanceId, subOrderCode, partyA,
+                       productName, contractNo, remark, frequencyBlockCode2,
+                       exclusiveType, usedBandwidth, startTime, endTime,
+                       satelliteCode, uplinkBeamCode, uplinkPolarization,
+                       uplinkStartFreq, uplinkEndFreq, downlinkBeamCode,
+                       downlinkPolarization, downlinkStartFreq, downlinkEndFreq,
+                       satelliteId, frequencyBlockId
+                FROM contract_record
+                {where}
+                ORDER BY id
+                """,
+                params,
+            )
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+# ══════════════════════════════════════════════════════════════
+#  商品实例清单
+# ══════════════════════════════════════════════════════════════
+@app.get("/api/product-instances")
+def list_product_instances():
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, productInstanceCode, subOrderCode, productName,
+                       instanceType, unitPrice, contractPeriod, planStartTime,
+                       planEndTime, fulfillStatus, subOrderCategory, mainOrderCode,
+                       contractNo, partyA, groupName, sales, reporter,
+                       subOrderAmount, mainOrderAmount, bandwidthMHz,
+                       satelliteCode, frequencyBlockCode2, exclusiveType, remark
+                FROM product_instance
+                ORDER BY id
+                """
+            )
+            return to_json(cur.fetchall())
     except Exception as e:
         raise db_error(e)

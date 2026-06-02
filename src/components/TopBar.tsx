@@ -55,7 +55,7 @@ export default function TopBar() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
         <MatrixLogoIcon size={20} />
         <span style={{ color: '#e2e8f0', fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap' }}>
-          射频矩阵管理系统
+          通道资源管理系统
         </span>
       </div>
 

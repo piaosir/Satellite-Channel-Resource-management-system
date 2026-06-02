@@ -117,7 +117,7 @@ export default function AppLayout() {
           <MatrixLogoIcon size={22} />
           <div>
             <div style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 13, lineHeight: '18px' }}>
-              射频矩阵管理系统
+              通道资源管理系统
             </div>
             <div style={{ color: '#2563eb', fontSize: 9, lineHeight: '13px', letterSpacing: 1.5, fontFamily: 'monospace' }}>
               RF MATRIX MANAGEMENT
@@ -186,10 +186,18 @@ export default function AppLayout() {
             style={{ width: 230 }}
             size="small"
             placeholder="选择卫星"
-            options={satellites.map((s) => ({
-              value: s.id,
-              label: `${s.satelliteName}（${s.satelliteCode}）`,
-            }))}
+            options={satellites.map((s) => {
+              const off = !!s.statusText && s.statusText !== '在轨运营';
+              return {
+                value: s.id,
+                label: (
+                  <span style={{ opacity: off ? 0.5 : 1 }}>
+                    {s.satelliteName}（{s.satelliteCode}）
+                    {off ? ` · ${s.statusText}` : ''}
+                  </span>
+                ),
+              };
+            })}
           />
 
           <div style={{ flex: 1 }} />

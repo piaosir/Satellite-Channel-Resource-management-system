@@ -7,7 +7,7 @@ import { useStore } from '@/store/useStore';
 import { fetchTransponders, fetchFrequencyBlocksBySatellite } from '@/api';
 import type { Transponder, FrequencyBlock } from '@/types';
 import type { FilterValues } from '@/components/FilterBar';
-import { fmtPolarization } from '@/utils/freqCalc';
+import { fmtPolarization, fmtChannelLabel } from '@/utils/freqCalc';
 
 export default function ResourceQuery() {
   const navigate = useNavigate();
@@ -26,7 +26,7 @@ export default function ResourceQuery() {
   const availableTransponders = useMemo(
     () => all.map((t) => ({
       switchId: t.switchId,
-      label: `${t.transponderName}（${t.band}${t.polarization ? ' ' + fmtPolarization(t.polarization) : ''}）`,
+      label: `${fmtChannelLabel(t)}（${t.band}${t.polarization ? ' ' + fmtPolarization(t.polarization) : ''}）`,
     })),
     [all],
   );

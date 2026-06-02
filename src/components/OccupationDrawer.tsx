@@ -1,22 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Drawer, Descriptions, Tag, Table, Badge,
-  Button, Space, Popconfirm, Tooltip, message, Input,
+  Button, Space, Popconfirm, Tooltip, message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import {
-  PlusOutlined, EditOutlined, DeleteOutlined,
-  InfoCircleOutlined, CheckOutlined, CloseOutlined,
-} from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useStore } from '@/store/useStore';
-import { fetchFrequencyBlocks, deleteFrequencyBlock, updateChannelCommonName } from '@/api';
+import { fetchFrequencyBlocks, deleteFrequencyBlock } from '@/api';
 import { PERMISSIONS } from '@/utils/roleGuard';
 import OccupationForm from './OccupationForm';
 import SpectrumChart from './SpectrumChart';
 import type { Transponder, FrequencyBlock } from '@/types';
-import { calcOccFreq, fmtFreq, fmtPolarization } from '@/utils/freqCalc';
+import { calcOccFreq, fmtFreq, fmtPolarization, fmtChannelLabel } from '@/utils/freqCalc';
 
-const STATUS_COLOR: Record<string, string> = { P: 'blue', R: 'default', '禁用': 'error' };
 function msToStr(ms: number | null | undefined): string {
   if (ms == null) return '—';
   return new Date(ms).toLocaleString('zh-CN', { hour12: false });
@@ -43,7 +39,7 @@ interface OccupationDrawerProps {
 }
 
 export default function OccupationDrawer({
-  open, transponder, transponders = [], onClose, onOccChange, onTransponderChange,
+  open, transponder, transponders = [], onClose, onOccChange,
 }: OccupationDrawerProps) {
   const { role, bumpDataVersion } = useStore();
   const [occs, setOccs] = useState<FrequencyBlock[]>([]);
@@ -52,14 +48,8 @@ export default function OccupationDrawer({
   const [formOpen, setFormOpen]       = useState(false);
   const [editRecord, setEditRecord]   = useState<FrequencyBlock | null>(null);
 
-  // 通道名称编辑状态
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput]     = useState('');
-  const [savingName, setSavingName]   = useState(false);
-
   const canManage = role != null && PERMISSIONS.canManageOccupation(role);
   const canDelete = role != null && PERMISSIONS.canDeleteOccupation(role);
-  const canEditName = role != null && PERMISSIONS.canEditChannelName(role);
 
   const reload = useCallback(() => {
     if (!transponder) return;
@@ -68,12 +58,7 @@ export default function OccupationDrawer({
 
   useEffect(() => {
     if (open) reload();
-    else setEditingName(false);
   }, [open, reload]);
-
-  useEffect(() => {
-    setEditingName(false);
-  }, [transponder?.switchId]);
 
   function handleFormSuccess() {
     reload();
@@ -87,22 +72,6 @@ export default function OccupationDrawer({
     reload();
     onOccChange?.();
     message.success('已删除');
-  }
-
-  async function handleSaveName() {
-    if (!transponder || !nameInput.trim()) return;
-    setSavingName(true);
-    try {
-      await updateChannelCommonName(transponder.inputChannelId, nameInput.trim());
-      bumpDataVersion();
-      message.success('通道名称已更新');
-      setEditingName(false);
-      onTransponderChange?.();
-    } catch (e) {
-      message.error((e as Error).message ?? '保存失败');
-    } finally {
-      setSavingName(false);
-    }
   }
 
   function openCreate() {
@@ -213,7 +182,7 @@ export default function OccupationDrawer({
       <Drawer
         title={
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>{transponder ? `通道详情 — ${transponder.transponderName}` : '通道详情'}</span>
+            <span>{transponder ? `通道详情 — ${fmtChannelLabel(transponder)}` : '通道详情'}</span>
             {canManage && transponder && (
               <Button
                 type="primary"
@@ -274,42 +243,6 @@ export default function OccupationDrawer({
                 {transponder.channelBw != null ? `${transponder.channelBw} MHz` : '—'}
               </Descriptions.Item>
               <Descriptions.Item label="TWT">{transponder.twtValidStatusCode ?? '—'}</Descriptions.Item>
-              <Descriptions.Item label="通道名称" span={2}>
-                {editingName ? (
-                  <Space size={4}>
-                    <Input
-                      size="small"
-                      value={nameInput}
-                      onChange={(e) => setNameInput(e.target.value)}
-                      onPressEnter={handleSaveName}
-                      style={{ width: 200 }}
-                      autoFocus
-                    />
-                    <Button
-                      type="text" size="small" icon={<CheckOutlined />}
-                      style={{ color: '#4ade80' }}
-                      loading={savingName}
-                      onClick={handleSaveName}
-                    />
-                    <Button
-                      type="text" size="small" icon={<CloseOutlined />}
-                      style={{ color: '#94a3b8' }}
-                      onClick={() => setEditingName(false)}
-                    />
-                  </Space>
-                ) : (
-                  <Space size={4}>
-                    <span>{transponder.transponderName}</span>
-                    {canEditName && (
-                      <Button
-                        type="text" size="small" icon={<EditOutlined />}
-                        style={{ color: '#60a5fa' }}
-                        onClick={() => { setNameInput(transponder.transponderName); setEditingName(true); }}
-                      />
-                    )}
-                  </Space>
-                )}
-              </Descriptions.Item>
             </Descriptions>
 
             {/* ── 占用统计条 ── */}
@@ -325,7 +258,7 @@ export default function OccupationDrawer({
                 txEndFreq={transponder.txEndFreq}
                 channelBw={transponder.channelBw}
                 occupations={occs}
-                transponderName={transponder.transponderName}
+                transponderName={fmtChannelLabel(transponder)}
                 switchOff={transponder.switchStatus !== 1}
               />
             </div>

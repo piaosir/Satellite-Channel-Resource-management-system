@@ -2,18 +2,17 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Table, Button, Space, Popconfirm,
-  Tag, Badge, Tooltip, message, Input,
+  Tag, Badge, Tooltip, message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { PlusOutlined, EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import FilterBar from '@/components/FilterBar';
 import OccupationForm from '@/components/OccupationForm';
 import { useStore } from '@/store/useStore';
-import { fetchTransponders, fetchFrequencyBlocksBySatellite, deleteFrequencyBlock, updateChannelCommonName } from '@/api';
+import { fetchTransponders, fetchFrequencyBlocksBySatellite, deleteFrequencyBlock } from '@/api';
 import type { Transponder, FrequencyBlock, FrequencyBlockFull } from '@/types';
 import type { FilterValues } from '@/components/FilterBar';
 import { fmtPolarization, fmtChannelLabel } from '@/utils/freqCalc';
-import { PERMISSIONS } from '@/utils/roleGuard';
 
 const DARK = {
   bg: '#0f172a',
@@ -64,13 +63,6 @@ export default function OccupationManage() {
   const [formOpen, setFormOpen]           = useState(false);
   const [editRecord, setEditRecord]       = useState<FrequencyBlock | null>(null);
   const [initTransponder, setInitTransponder] = useState<Transponder | null>(null);
-
-  // 通道名称内联编辑
-  const [editingChannelId, setEditingChannelId] = useState<number | null>(null);
-  const [nameInput, setNameInput]               = useState('');
-  const [savingName, setSavingName]             = useState(false);
-
-  const canEditName = role != null && PERMISSIONS.canEditChannelName(role);
 
   // 权限守卫
   useEffect(() => {
@@ -135,69 +127,17 @@ export default function OccupationManage() {
     reload();
   }
 
-  async function handleSaveName(channelId: number) {
-    if (!nameInput.trim()) return;
-    setSavingName(true);
-    try {
-      await updateChannelCommonName(channelId, nameInput.trim());
-      bumpDataVersion();
-      message.success('通道名称已更新');
-      setEditingChannelId(null);
-      reload();
-    } catch (e) {
-      message.error((e as Error).message ?? '保存失败');
-    } finally {
-      setSavingName(false);
-    }
-  }
-
   const columns: ColumnsType<FrequencyBlockFull> = [
     {
       title: '通道',
-      dataIndex: 'transponderName',
-      width: 160,
-      render: (_v, record) => {
-        if (canEditName && editingChannelId === record.inputChannelId) {
-          return (
-            <Space size={4}>
-              <Input
-                size="small"
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onPressEnter={() => handleSaveName(record.inputChannelId)}
-                style={{ width: 110 }}
-                autoFocus
-              />
-              <Button
-                type="text" size="small" icon={<CheckOutlined />}
-                style={{ color: '#4ade80' }}
-                loading={savingName}
-                onClick={() => handleSaveName(record.inputChannelId)}
-              />
-              <Button
-                type="text" size="small" icon={<CloseOutlined />}
-                style={{ color: '#94a3b8' }}
-                onClick={() => setEditingChannelId(null)}
-              />
-            </Space>
-          );
-        }
-        return (
-          <Space size={4}>
-            <span style={{ color: DARK.text, fontWeight: 500 }}>{fmtChannelLabel(record)}</span>
-            {canEditName && (
-              <Tooltip title="修改通道名称">
-                <Button
-                  type="text" size="small" icon={<EditOutlined />}
-                  style={{ color: '#60a5fa' }}
-                  onClick={() => { setEditingChannelId(record.inputChannelId); setNameInput(record.transponderName); }}
-                />
-              </Tooltip>
-            )}
-          </Space>
-        );
-      },
-      sorter: (a, b) => a.transponderName.localeCompare(b.transponderName),
+      dataIndex: 'inputChannelShortName',
+      width: 150,
+      render: (_v, record) => (
+        <span style={{ color: DARK.text, fontWeight: 500, fontFamily: 'monospace' }}>
+          {fmtChannelLabel(record)}
+        </span>
+      ),
+      sorter: (a, b) => fmtChannelLabel(a).localeCompare(fmtChannelLabel(b)),
     },
     {
       title: '上行频段',

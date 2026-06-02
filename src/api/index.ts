@@ -1,4 +1,7 @@
-import type { Satellite, Transponder, FrequencyBlock, FrequencyBlockFull } from '@/types';
+import type {
+  Satellite, Transponder, FrequencyBlock, FrequencyBlockFull,
+  Twt, ChannelAttribute, SwitchGroup, ProductInstance, ContractRecord,
+} from '@/types';
 
 export interface BandStat {
   band: string;
@@ -32,6 +35,9 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 // ── 卫星 ──────────────────────────────────────────────────────
 export const fetchSatellites = (): Promise<Satellite[]> =>
   apiFetch('/satellites');
+
+export const fetchSatelliteDetail = (id: number): Promise<Satellite> =>
+  apiFetch(`/satellites/${id}`);
 
 // ── 转发器（含频率/波束/开关状态） ───────────────────────────
 export const fetchTransponders = (satelliteId: number): Promise<Transponder[]> =>
@@ -93,3 +99,33 @@ export async function fetchFrequencyBlocksForConflict(
     .filter((b) => excludeId == null || b.id !== excludeId)
     .map((b) => ({ id: b.id, frequencyOffset: b.frequencyOffset, occupiedBandwidth: b.occupiedBandwidth }));
 }
+
+// ── 行波管 TWT ────────────────────────────────────────────────
+export const fetchTwts = (satelliteId: number): Promise<Twt[]> =>
+  apiFetch(`/twt/satellite/${satelliteId}`);
+
+export const updateTwt = (
+  id: number,
+  data: Partial<Pick<Twt, 'onOff' | 'mutingStatus' | 'gainMode' | 'gainLevel'>>,
+): Promise<{ ok: boolean }> =>
+  apiFetch(`/twt/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+// ── 通道属性（增益 / SFD） ────────────────────────────────────
+export const fetchChannelAttributes = (satelliteId: number): Promise<ChannelAttribute[]> =>
+  apiFetch(`/channel-attributes/satellite/${satelliteId}`);
+
+// ── 开关组 ────────────────────────────────────────────────────
+export const fetchSwitchGroups = (satelliteId: number): Promise<SwitchGroup[]> =>
+  apiFetch(`/switch-groups/satellite/${satelliteId}`);
+
+// ── 合约记录（新） ────────────────────────────────────────────
+export const fetchContracts = (satelliteCode?: string): Promise<ContractRecord[]> =>
+  apiFetch(`/contracts${satelliteCode ? `?satellite=${encodeURIComponent(satelliteCode)}` : ''}`);
+
+// ── 商品实例清单 ──────────────────────────────────────────────
+export const fetchProductInstances = (): Promise<ProductInstance[]> =>
+  apiFetch('/product-instances');

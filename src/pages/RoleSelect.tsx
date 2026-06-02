@@ -1,15 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  DollarOutlined,
-  BulbOutlined,
-  ExperimentOutlined,
-  GlobalOutlined,
-  ControlOutlined,
-  ApiOutlined,
-  CodeOutlined,
-  ContainerOutlined,
-  AimOutlined,
+  UserOutlined,
   CheckOutlined,
   RightOutlined,
 } from '@ant-design/icons';
@@ -32,7 +24,7 @@ const roles: RoleDef[] = [
     key: 'business_manager',
     label: '商务经理',
     subtitle: 'Business Manager',
-    icon: <DollarOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '资源统计', '合约记录管理', '使用记录管理'],
     color: '#3b82f6',
     level: 'L2',
@@ -41,7 +33,7 @@ const roles: RoleDef[] = [
     key: 'product_manager',
     label: '产品经理',
     subtitle: 'Product Manager',
-    icon: <BulbOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '资源统计'],
     color: '#10b981',
     level: 'L2',
@@ -50,7 +42,7 @@ const roles: RoleDef[] = [
     key: 'product_rd',
     label: '产品研发',
     subtitle: 'Product R&D',
-    icon: <ExperimentOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '资源统计', '资源/载波规划管理'],
     color: '#06b6d4',
     level: 'L2',
@@ -59,7 +51,7 @@ const roles: RoleDef[] = [
     key: 'industry_manager',
     label: '行业经理',
     subtitle: 'Industry Manager',
-    icon: <GlobalOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '资源统计', '占用管理', '使用记录管理', '合约记录管理'],
     color: '#f59e0b',
     level: 'L2',
@@ -68,7 +60,7 @@ const roles: RoleDef[] = [
     key: 'ops_engineer',
     label: '运控工程师',
     subtitle: 'Operations Engineer',
-    icon: <ControlOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '资源统计', '使用记录管理'],
     color: '#84cc16',
     level: 'L3',
@@ -77,7 +69,7 @@ const roles: RoleDef[] = [
     key: 'network_engineer',
     label: '网络系统工程师',
     subtitle: 'Network Systems Engineer',
-    icon: <ApiOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '资源统计', '占用管理', '使用记录管理', '合约记录管理', '地面系统管理'],
     color: '#8b5cf6',
     level: 'L3',
@@ -86,7 +78,7 @@ const roles: RoleDef[] = [
     key: 'digital_engineer',
     label: '数字化工程师',
     subtitle: 'Digital Engineer',
-    icon: <CodeOutlined />,
+    icon: <UserOutlined />,
     permissions: ['合约记录管理'],
     color: '#ec4899',
     level: 'L3',
@@ -95,7 +87,7 @@ const roles: RoleDef[] = [
     key: 'inventory_manager',
     label: '库存管理员',
     subtitle: 'Inventory Manager',
-    icon: <ContainerOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '资源统计'],
     color: '#f97316',
     level: 'L2',
@@ -104,7 +96,7 @@ const roles: RoleDef[] = [
     key: 'ttc_engineer',
     label: '卫星测控工程师',
     subtitle: 'Satellite TT&C Engineer',
-    icon: <AimOutlined />,
+    icon: <UserOutlined />,
     permissions: ['资源查询', '通道配置管理', '行波管状态管理'],
     color: '#ef4444',
     level: 'L3',
@@ -152,7 +144,7 @@ export default function RoleSelect() {
       >
         <MatrixLogoIcon size={18} />
         <span style={{ color: '#e2e8f0', fontWeight: 700, fontSize: 14, letterSpacing: 0.5 }}>
-          射频矩阵管理系统
+          通道资源管理系统
         </span>
         <span style={{ color: '#1e3a5f', margin: '0 6px' }}>|</span>
         <span style={{ color: '#2563eb', fontSize: 10, fontFamily: 'monospace', letterSpacing: 1.5 }}>
@@ -245,7 +237,7 @@ export default function RoleSelect() {
               lineHeight: 1.15,
             }}
           >
-            射频矩阵管理系统
+            通道资源管理系统
           </div>
 
           <div

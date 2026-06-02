@@ -1,73 +1,95 @@
-import { useState } from 'react';
-import { Table, Tag, Input, Button, Space, DatePicker } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { Table, Tag, Input, Select, Tooltip } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
+import { fetchProductInstances } from '@/api';
+import type { ProductInstance } from '@/types';
 
-const { RangePicker } = DatePicker;
+const fmtDate = (s: string | null) => (s ? s.slice(0, 10) : '—');
+const fmtMoney = (v: number | null) =>
+  v == null ? '—' : `¥${Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
 
-interface UsageRecord {
-  id: string;
-  recordNo: string;
-  channelName: string;
-  usageType: string;
-  startTime: string;
-  endTime: string;
-  bandwidth: number;
-  status: 'running' | 'finished' | 'abnormal';
-}
-
-const MOCK_DATA: UsageRecord[] = [
-  { id: '1', recordNo: 'USE-2024-0001', channelName: 'TP01-H', usageType: '出租', startTime: '2024-01-15 08:00', endTime: '2025-01-14 08:00', bandwidth: 36, status: 'running' },
-  { id: '2', recordNo: 'USE-2024-0002', channelName: 'TP02-V', usageType: '合作', startTime: '2024-02-01 00:00', endTime: '2024-12-31 23:59', bandwidth: 18, status: 'running' },
-  { id: '3', recordNo: 'USE-2023-0087', channelName: 'TP03-H', usageType: '自用', startTime: '2023-07-01 00:00', endTime: '2024-06-30 23:59', bandwidth: 54, status: 'finished' },
-  { id: '4', recordNo: 'USE-2024-0015', channelName: 'TP05-V', usageType: '出租', startTime: '2024-05-20 10:00', endTime: '2026-05-19 10:00', bandwidth: 72, status: 'running' },
-  { id: '5', recordNo: 'USE-2024-0023', channelName: 'TP07-H', usageType: '合作', startTime: '2024-08-01 00:00', endTime: '2025-07-31 23:59', bandwidth: 36, status: 'abnormal' },
-  { id: '6', recordNo: 'USE-2024-0031', channelName: 'TP09-V', usageType: '自用', startTime: '2024-09-15 09:00', endTime: '2025-09-14 09:00', bandwidth: 27, status: 'running' },
-];
-
-const statusMap: Record<UsageRecord['status'], { label: string; color: string }> = {
-  running:  { label: '运行中', color: 'green' },
-  finished: { label: '已结束', color: 'default' },
-  abnormal: { label: '异常', color: 'red' },
+const groupColor: Record<string, string> = {
+  广电组: 'blue',
+  行业市场组: 'cyan',
+  政府军队组: 'red',
+  国际组: 'gold',
 };
 
-const usageTypeColor: Record<string, string> = {
-  '出租': 'blue',
-  '合作': 'cyan',
-  '自用': 'purple',
-  '禁用': 'red',
+const fulfillColor: Record<string, string> = {
+  履约中: 'green',
+  未履约: 'orange',
 };
 
-const columns: ColumnsType<UsageRecord> = [
-  { title: '记录编号', dataIndex: 'recordNo', key: 'recordNo', width: 160, render: (v) => <span style={{ fontFamily: 'monospace', color: '#93c5fd' }}>{v}</span> },
-  { title: '通道名称', dataIndex: 'channelName', key: 'channelName', width: 120 },
+const columns: ColumnsType<ProductInstance> = [
   {
-    title: '使用类型', dataIndex: 'usageType', key: 'usageType', width: 100,
-    render: (v: string) => <Tag color={usageTypeColor[v] ?? 'default'}>{v}</Tag>,
+    title: '商品实例编号', dataIndex: 'productInstanceCode', key: 'productInstanceCode', width: 250, ellipsis: true,
+    render: (v: string | null) =>
+      v ? (
+        <Tooltip title={v}>
+          <span style={{ fontFamily: 'monospace', color: '#93c5fd', fontSize: 12 }}>{v}</span>
+        </Tooltip>
+      ) : '—',
   },
-  { title: '开始时间', dataIndex: 'startTime', key: 'startTime', width: 160, render: (v) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
-  { title: '结束时间', dataIndex: 'endTime', key: 'endTime', width: 160, render: (v) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</span> },
-  { title: '带宽 (MHz)', dataIndex: 'bandwidth', key: 'bandwidth', width: 110, align: 'right', render: (v) => <span style={{ fontFamily: 'monospace' }}>{v}</span> },
+  { title: '甲方', dataIndex: 'partyA', key: 'partyA', width: 190, ellipsis: true },
+  { title: '商品名称', dataIndex: 'productName', key: 'productName', width: 160, ellipsis: true },
   {
-    title: '状态', dataIndex: 'status', key: 'status', width: 100,
-    render: (v: UsageRecord['status']) => <Tag color={statusMap[v].color}>{statusMap[v].label}</Tag>,
+    title: '分组', dataIndex: 'groupName', key: 'groupName', width: 120,
+    render: (v: string | null) => (v ? <Tag color={groupColor[v] ?? 'default'}>{v}</Tag> : '—'),
+  },
+  { title: '销售', dataIndex: 'sales', key: 'sales', width: 90 },
+  {
+    title: '带宽 (MHz)', dataIndex: 'bandwidthMHz', key: 'bandwidthMHz', width: 100, align: 'right',
+    render: (v) => <span style={{ fontFamily: 'monospace' }}>{v ?? '—'}</span>,
   },
   {
-    title: '操作', key: 'action', width: 100,
-    render: () => (
-      <Space size="small">
-        <Button size="small" type="text" style={{ color: '#3b82f6' }}>详情</Button>
-      </Space>
+    title: '子订单金额', dataIndex: 'subOrderAmount', key: 'subOrderAmount', width: 130, align: 'right',
+    render: (v) => <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{fmtMoney(v)}</span>,
+  },
+  {
+    title: '履约状态', dataIndex: 'fulfillStatus', key: 'fulfillStatus', width: 100,
+    render: (v: string | null) => (v ? <Tag color={fulfillColor[v] ?? 'default'}>{v}</Tag> : <Tag>未填报</Tag>),
+  },
+  {
+    title: '合约期', key: 'period', width: 190,
+    render: (_, r) => (
+      <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+        {fmtDate(r.planStartTime)} ~ {fmtDate(r.planEndTime)}
+      </span>
     ),
   },
 ];
 
 export default function UsageRecords() {
+  const [data, setData] = useState<ProductInstance[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [groupFilter, setGroupFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
-  const filtered = MOCK_DATA.filter(
-    (r) => r.recordNo.includes(search) || r.channelName.includes(search),
+  useEffect(() => {
+    fetchProductInstances()
+      .then(setData)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const groups = useMemo(
+    () => [...new Set(data.map((d) => d.groupName).filter(Boolean))] as string[],
+    [data],
   );
+
+  const filtered = data.filter((r) => {
+    if (groupFilter && r.groupName !== groupFilter) return false;
+    if (statusFilter && r.fulfillStatus !== statusFilter) return false;
+    if (!search) return true;
+    const s = search.toLowerCase();
+    return (
+      (r.productInstanceCode ?? '').toLowerCase().includes(s) ||
+      (r.partyA ?? '').toLowerCase().includes(s) ||
+      (r.contractNo ?? '').toLowerCase().includes(s)
+    );
+  });
 
   return (
     <div style={{ padding: '40px 48px 32px', color: '#e2e8f0' }}>
@@ -79,26 +101,33 @@ export default function UsageRecords() {
       </h1>
 
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
-        <RangePicker style={{ width: 280 }} />
         <Input
           prefix={<SearchOutlined style={{ color: '#475569' }} />}
-          placeholder="搜索记录编号、通道名..."
+          placeholder="搜索商品实例编号、甲方、合同号..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{ width: 260 }}
+          style={{ width: 320 }}
           allowClear
         />
-        <Button type="primary" style={{ background: '#2563eb', borderColor: '#2563eb' }}>
-          查询
-        </Button>
+        <Select
+          placeholder="按分组" allowClear style={{ width: 140 }} value={groupFilter}
+          onChange={(v) => setGroupFilter(v ?? null)}
+          options={groups.map((g) => ({ value: g, label: g }))}
+        />
+        <Select
+          placeholder="履约状态" allowClear style={{ width: 130 }} value={statusFilter}
+          onChange={(v) => setStatusFilter(v ?? null)}
+          options={[{ value: '履约中', label: '履约中' }, { value: '未履约', label: '未履约' }]}
+        />
       </div>
 
       <Table
         columns={columns}
         dataSource={filtered}
         rowKey="id"
-        pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条记录` }}
-        scroll={{ x: 1000 }}
+        loading={loading}
+        pagination={{ pageSize: 12, showTotal: (t) => `共 ${t} 条记录` }}
+        scroll={{ x: 1300 }}
       />
     </div>
   );
