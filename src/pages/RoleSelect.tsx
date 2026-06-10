@@ -40,12 +40,12 @@ const roles: RoleDef[] = [
   },
   {
     key: 'product_rd',
-    label: '产品研发',
-    subtitle: 'Product R&D',
+    label: '网络规划工程师',
+    subtitle: 'Network Planning Engineer',
     icon: <UserOutlined />,
-    permissions: ['资源查询', '资源统计', '资源/载波规划管理'],
+    permissions: ['资源查询', '资源统计', '通道规划管理（CRUD）'],
     color: '#06b6d4',
-    level: 'L2',
+    level: 'L3',
   },
   {
     key: 'industry_manager',

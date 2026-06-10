@@ -16,13 +16,22 @@ interface FilterBarProps {
   availableTransponders?: { switchId: number; label: string }[];
   availableBands?: string[];
   availablePolarizations?: string[];
+  occStatusOptions?: { value: string; label: string }[];
+  occStatusPlaceholder?: string;
 }
+
+const DEFAULT_OCC_STATUS_OPTIONS = [
+  { value: 'P', label: 'P 划分（在用）' },
+  { value: 'R', label: 'R 回收（空闲）' },
+];
 
 export default function FilterBar({
   onFilter,
   availableTransponders,
   availableBands,
   availablePolarizations,
+  occStatusOptions = DEFAULT_OCC_STATUS_OPTIONS,
+  occStatusPlaceholder = '占用状态',
 }: FilterBarProps) {
   const [transponderSwitchId, setTransponderSwitchId] = useState<number | undefined>();
   const [band, setBand]                               = useState<string | undefined>();
@@ -96,14 +105,11 @@ export default function FilterBar({
         />
         <Select
           allowClear
-          placeholder="占用状态"
+          placeholder={occStatusPlaceholder}
           value={occStatus}
           onChange={setOccStatus}
-          style={{ width: 110 }}
-          options={[
-            { value: 'P', label: 'P 划分（在用）' },
-            { value: 'R', label: 'R 回收（空闲）' },
-          ]}
+          style={{ width: 120 }}
+          options={occStatusOptions}
         />
         <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
           查询

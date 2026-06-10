@@ -27,7 +27,7 @@ const { Sider, Header, Content } = Layout;
 const roleLabels: Record<Role, { label: string; color: string }> = {
   business_manager: { label: '商务经理',       color: 'blue' },
   product_manager:  { label: '产品经理',       color: 'green' },
-  product_rd:       { label: '产品研发',       color: 'cyan' },
+  product_rd:       { label: '网络规划工程师', color: 'cyan' },
   industry_manager: { label: '行业经理',       color: 'gold' },
   ops_engineer:     { label: '运控工程师',     color: 'lime' },
   network_engineer: { label: '网络系统工程师', color: 'purple' },

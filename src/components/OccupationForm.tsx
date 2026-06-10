@@ -272,7 +272,7 @@ export default function OccupationForm({
       width={660}
       okText={isEdit ? '保存' : '新建'}
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
       styles={{
         body:   { background: DARK.card },
         header: { background: DARK.card, borderBottom: `1px solid ${DARK.border}` },

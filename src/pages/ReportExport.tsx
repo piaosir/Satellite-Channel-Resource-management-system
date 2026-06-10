@@ -41,7 +41,7 @@ interface FieldDef {
 const ALL_FIELDS: FieldDef[] = [
   // ── 占用信息 ──────────────────────────────────────────────
   { key: 'id',                    label: '记录ID',               defaultChecked: false, group: '占用信息' },
-  { key: 'frequencyBlockCode',    label: '频率块编码',           defaultChecked: true,  group: '占用信息' },
+  { key: 'frequencyBlockCode2',   label: '频率块代码',           defaultChecked: true,  group: '占用信息' },
   { key: 'productInstanceCode',   label: '商品实例编码',         defaultChecked: false, group: '占用信息' },
   { key: 'occupationStatus',      label: '占用状态',             defaultChecked: true,  group: '占用信息' },
   { key: 'occupiedBandwidth',     label: '占用带宽 (MHz)',       defaultChecked: true,  group: '占用信息' },

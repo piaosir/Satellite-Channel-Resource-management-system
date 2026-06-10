@@ -15,15 +15,15 @@ const BAND_COLOR: Record<string, string> = { Ku: 'blue', EKu: 'purple', C: 'gree
 /** 分区状态 + 用途 → 显示颜色 */
 function getOccColor(occ: FrequencyBlock): string {
   if (occ.usageType === '禁用') return '#ff4d4f';
-  if (occ.partitionStatus === 'P') return '#1677ff';
-  return '#52c41a'; // R 回收/空闲
+  if (occ.partitionStatus === 'R') return '#52c41a';
+  return '#1677ff'; // P 规划
 }
 
 /** 分区状态 + 用途 → 显示文字 */
 function getOccLabel(occ: FrequencyBlock): string {
   if (occ.usageType === '禁用') return '禁用';
-  if (occ.partitionStatus === 'P') return occ.usageType ?? '划分';
-  return '空闲';
+  if (occ.partitionStatus === 'R') return '回收';
+  return occ.usageType ?? '划分';
 }
 
 function OccBar({ occs, channelBw, switchOff }: { occs: FrequencyBlock[]; channelBw: number; switchOff?: boolean }) {

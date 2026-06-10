@@ -1,18 +1,25 @@
-import type { FrequencyBlock } from '@/types';
 import { fmtFreq } from '@/utils/freqCalc';
 
+type SpectrumItem = {
+  frequencyOffset: number;
+  occupiedBandwidth: number;
+  partitionStatus: 'P' | 'R';
+  usageType: string | null;
+};
+
 const STATUS_COLOR: Record<string, string> = {
-  P: '#1677ff',      // 划分/在用
-  R: '#52c41a',      // 空闲/回收
+  P: '#1677ff',
+  R: '#52c41a',
   '禁用': '#ff4d4f',
   '预览': '#facc15',
 };
 
-function getOccStatus(o: FrequencyBlock): string {
+function getOccStatus(o: SpectrumItem): string {
   if (o.usageType === '禁用') return '禁用';
-  return o.partitionStatus === 'P' ? o.usageType ?? '划分' : '空闲';
+  if (o.partitionStatus === 'R') return o.usageType ?? '已分配';
+  return o.usageType ?? '规划';
 }
-function getOccColor(o: FrequencyBlock): string {
+function getOccColor(o: SpectrumItem): string {
   if (o.usageType === '禁用') return STATUS_COLOR['禁用'];
   return STATUS_COLOR[o.partitionStatus] ?? '#475569';
 }
@@ -23,7 +30,7 @@ interface SpectrumChartProps {
   txStartFreq: number | null;
   txEndFreq: number | null;
   channelBw: number | null;
-  occupations: FrequencyBlock[];
+  occupations: SpectrumItem[];
   transponderName: string;
   previewOcc?: { frequencyOffset: number; occupiedBandwidth: number } | null;
   switchOff?: boolean;
@@ -148,8 +155,8 @@ export default function SpectrumChart({
       <svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} width="100%" height={SVG_H} style={{ display: 'block' }}>
 
         {/* 图例 */}
-        {(['划分', '空闲', '禁用'] as const).map((s, i) => {
-          const colorKey = s === '划分' ? 'P' : s === '空闲' ? 'R' : '禁用';
+        {(['规划', '已分配', '禁用'] as const).map((s, i) => {
+          const colorKey = s === '规划' ? 'P' : s === '已分配' ? 'R' : '禁用';
           return (
             <g key={s} transform={`translate(${SVG_W - 186 + i * 60}, 14)`}>
               <rect width={11} height={11} fill={STATUS_COLOR[colorKey]} rx={2} />

@@ -1,5 +1,3 @@
-import type { FrequencyBlock } from '@/types';
-
 /**
  * 格式化频率数值：最多保留 3 位小数，去除尾零
  * 避免浮点精度问题导致显示如 14498.000000001
@@ -53,7 +51,7 @@ export function fmtChannelLabel(t: {
 }
 
 export function calcOccFreq(
-  occ: FrequencyBlock,
+  occ: { frequencyOffset: number; occupiedBandwidth: number },
   rxChannelStart: number,
   txChannelStart: number,
   channelBw: number,

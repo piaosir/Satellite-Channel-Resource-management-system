@@ -1,6 +1,7 @@
 import type {
   Satellite, Transponder, FrequencyBlock, FrequencyBlockFull,
   Twt, ChannelAttribute, SwitchGroup, ProductInstance, ContractRecord,
+  OccupationRecord, OccupationRecordFull, DeliveryRecord,
 } from '@/types';
 
 export interface BandStat {
@@ -129,3 +130,63 @@ export const fetchContracts = (satelliteCode?: string): Promise<ContractRecord[]
 // ── 商品实例清单 ──────────────────────────────────────────────
 export const fetchProductInstances = (): Promise<ProductInstance[]> =>
   apiFetch('/product-instances');
+
+// ── 通道占用记录（按卫星，含完整关联字段）────────────────────
+export const fetchOccupationRecordsBySatellite = (satelliteId: number): Promise<OccupationRecordFull[]> =>
+  apiFetch(`/occupation-records/satellite/${satelliteId}`);
+
+// ── 通道占用记录（按开关） ────────────────────────────────────
+export const fetchOccupationRecordsBySwitch = (switchId: number): Promise<OccupationRecord[]> =>
+  apiFetch(`/occupation-records/switch/${switchId}`);
+
+// ── 新建占用记录 ──────────────────────────────────────────────
+export const createOccupationRecord = (data: Partial<OccupationRecord>): Promise<{ id: number }> =>
+  apiFetch('/occupation-records', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+// ── 更新占用记录 ──────────────────────────────────────────────
+export const updateOccupationRecord = (
+  id: number,
+  data: Partial<OccupationRecord>,
+): Promise<{ ok: boolean }> =>
+  apiFetch(`/occupation-records/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+// ── 删除占用记录 ──────────────────────────────────────────────
+export const deleteOccupationRecord = (id: number): Promise<{ ok: boolean }> =>
+  apiFetch(`/occupation-records/${id}`, { method: 'DELETE' });
+
+// ── 通道占用记录（按规划块，冲突检测用） ─────────────────────
+export const fetchOccupationRecordsByPlanningBlock = (planningBlockId: number): Promise<OccupationRecord[]> =>
+  apiFetch(`/occupation-records/planning-block/${planningBlockId}`);
+
+// ── 冲突检测用：某规划块内的占用列表（排除指定记录 ID） ────────
+export async function fetchOccupationRecordsForConflict(
+  planningBlockId: number,
+  excludeId?: number,
+): Promise<Pick<OccupationRecord, 'id' | 'frequencyOffset' | 'occupiedBandwidth'>[]> {
+  const all = await fetchOccupationRecordsByPlanningBlock(planningBlockId);
+  return all
+    .filter((r) => excludeId == null || r.id !== excludeId)
+    .map((r) => ({ id: r.id, frequencyOffset: r.frequencyOffset, occupiedBandwidth: r.occupiedBandwidth }));
+}
+
+// ── 带宽合约-交付过程记录 ─────────────────────────────────────
+export const fetchDeliveryRecordsByAllocationBlock = (allocationBlockId: number): Promise<DeliveryRecord[]> =>
+  apiFetch(`/delivery-records/allocation-block/${allocationBlockId}`);
+
+export const createDeliveryRecord = (data: Partial<DeliveryRecord>): Promise<{ id: number }> =>
+  apiFetch('/delivery-records', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+
+export const deleteDeliveryRecord = (id: number): Promise<{ ok: boolean }> =>
+  apiFetch(`/delivery-records/${id}`, { method: 'DELETE' });

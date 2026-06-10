@@ -20,6 +20,14 @@ RF Matrix API — Python / FastAPI 后端
     POST   /api/frequency-blocks
     PUT    /api/frequency-blocks/{fb_id}
     DELETE /api/frequency-blocks/{fb_id}
+
+    -- 通道占用状态（分频工程师二次分配，v0.3）--
+    GET    /api/occupation-records/satellite/{satellite_id}
+    GET    /api/occupation-records/switch/{switch_id}
+    GET    /api/occupation-records/planning-block/{planning_block_id}
+    POST   /api/occupation-records
+    PUT    /api/occupation-records/{record_id}
+    DELETE /api/occupation-records/{record_id}
 """
 
 import logging
@@ -116,7 +124,7 @@ class FrequencyBlockCreate(BaseModel):
     switchCode:          Optional[str]   = None
     frequencyOffset:     float
     occupiedBandwidth:   float
-    partitionStatus:     Optional[str]   = "P"   # P=划分  R=回收
+    partitionStatus:     Optional[str]   = "P"   # P=规划  R=已分配  N=无效
     usageType:           Optional[str]   = None   # 出租/合作/自用/禁用
     uplinkStartFreq:     Optional[float] = None
     uplinkEndFreq:       Optional[float] = None
@@ -737,5 +745,357 @@ def list_product_instances():
                 """
             )
             return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+# ══════════════════════════════════════════════════════════════
+#  通道占用状态（occupation_realtime_status）
+#  分频工程师（行业经理/网络系统工程师）在规划块上二次分配
+# ══════════════════════════════════════════════════════════════
+
+class OccupationRecordCreate(BaseModel):
+    planningBlockId:   Optional[int]   = None
+    planningBlockCode: Optional[str]   = None
+    switchId:          int
+    switchCode:        Optional[str]   = None
+    frequencyOffset:   float
+    occupiedBandwidth: float
+    blockValid:        Optional[int]   = 1        # 1=有效 0=无效
+    usageType:         Optional[str]   = None
+    uplinkStartFreq:   Optional[float] = None
+    uplinkEndFreq:     Optional[float] = None
+    downlinkStartFreq: Optional[float] = None
+    downlinkEndFreq:   Optional[float] = None
+    remarkFulfillment: Optional[str]   = None
+    remarkUser:        Optional[str]   = None
+    remarkSales:       Optional[str]   = None
+
+
+class OccupationRecordUpdate(BaseModel):
+    frequencyOffset:   float
+    occupiedBandwidth: float
+    blockValid:        Optional[int]   = 1        # 1=有效 0=无效
+    usageType:         Optional[str]   = None
+    uplinkStartFreq:   Optional[float] = None
+    uplinkEndFreq:     Optional[float] = None
+    downlinkStartFreq: Optional[float] = None
+    downlinkEndFreq:   Optional[float] = None
+    remarkFulfillment: Optional[str]   = None
+    remarkUser:        Optional[str]   = None
+    remarkSales:       Optional[str]   = None
+
+
+class DeliveryRecordCreate(BaseModel):
+    allocationBlockId:   Optional[int] = None
+    allocationBlockCode: Optional[str] = None
+    planningBlockId:     Optional[int] = None
+    planningBlockCode:   Optional[str] = None
+    switchId:            Optional[int] = None
+    switchCode:          Optional[str] = None
+    occupyStatus:        str                       # P=占用  R=释放
+    usageType:           Optional[str] = None
+    contractNo:          Optional[str] = None
+    partyA:              Optional[str] = None
+    operateUser:         Optional[str] = None
+    supervisorUser:      Optional[str] = None
+    remark:              Optional[str] = None
+
+
+_OCC_FULL_SQL = """
+    SELECT
+        occ.id,
+        occ.occupationCode,
+        occ.planningBlockId,
+        occ.planningBlockCode,
+        occ.switchId,
+        occ.switchCode,
+        occ.frequencyOffset,
+        occ.occupiedBandwidth,
+        occ.partitionStatus,
+        occ.statusUpdateTime,
+        occ.usageType,
+        occ.uplinkStartFreq,
+        occ.uplinkEndFreq,
+        occ.downlinkStartFreq,
+        occ.downlinkEndFreq,
+        occ.remarkFulfillment,
+        occ.remarkUser,
+        occ.remarkSales,
+        occ.isValid                             AS blockValid,
+        COALESCE(fb.frequencyBlockCode2, occ.planningBlockCode) AS planningBlockCodeFull,
+        fb.usageType                        AS planningUsageType,
+        fb.frequencyOffset                  AS planningOffset,
+        fb.occupiedBandwidth                AS planningBandwidth,
+        sw.switchStatus,
+        sw.switchType,
+        sw.twtValidStatus                   AS twtValidStatusCode,
+        mpi_in.channelShortName             AS inputChannelShortName,
+        mpi_out.channelShortName            AS outputChannelShortName,
+        ci_rx.commonName                    AS transponderName,
+        ci_rx.id                            AS inputChannelId,
+        m.satelliteCode,
+        m.areaNo,
+        m.groupNo,
+        m.remark                            AS matrixRemark,
+        m.id                                AS matrixId,
+        m.matrixCode,
+        cg_rx.band,
+        cg_rx.polarization,
+        cg_rx.txRxType,
+        cg_rx.antennaCode                   AS antennaName,
+        cg_tx.band                          AS txBand,
+        cg_tx.polarization                  AS txPolarization,
+        cg_tx.antennaCode                   AS txAntennaName,
+        ci_rx.channelStartFreq,
+        ci_rx.channelEndFreq,
+        ci_rx.channelBandwidth,
+        ci_tx.channelStartFreq              AS txChannelStartFreq,
+        ci_tx.channelEndFreq                AS txChannelEndFreq,
+        ci_tx.channelBandwidth              AS txChannelBandwidth
+    FROM occupation_realtime_status occ
+    JOIN  matrix_switch_status   sw      ON sw.id      = occ.switchId
+    JOIN  switch_matrix_info     m       ON m.id        = sw.matrixId
+    LEFT JOIN frequency_block_realtime_status fb
+                                         ON fb.id      = occ.planningBlockId
+    LEFT JOIN matrix_port_info   mpi_in  ON mpi_in.id  = sw.inputPortId
+    LEFT JOIN matrix_port_info   mpi_out ON mpi_out.id = sw.outputPortId
+    LEFT JOIN channel_info       ci_rx   ON ci_rx.id   = mpi_in.channelId
+    LEFT JOIN channel_info       ci_tx   ON ci_tx.id   = mpi_out.channelId
+    LEFT JOIN channel_group_info cg_rx   ON cg_rx.id   = ci_rx.channelGroupId
+    LEFT JOIN channel_group_info cg_tx   ON cg_tx.id   = ci_tx.channelGroupId
+"""
+
+
+@app.get("/api/occupation-records/satellite/{satellite_id}")
+def list_occupation_records_by_satellite(satellite_id: int):
+    sql = _OCC_FULL_SQL + """
+        WHERE m.satelliteId = %s
+        ORDER BY cg_rx.band, sw.inputPortSeq, occ.frequencyOffset
+    """
+    try:
+        with get_cursor() as cur:
+            cur.execute(sql, (satellite_id,))
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+@app.get("/api/occupation-records/switch/{switch_id}")
+def list_occupation_records_by_switch(switch_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, occupationCode, planningBlockId, planningBlockCode,
+                       switchId, switchCode, frequencyOffset, occupiedBandwidth,
+                       partitionStatus, isValid AS blockValid, statusUpdateTime, usageType,
+                       uplinkStartFreq, uplinkEndFreq, downlinkStartFreq, downlinkEndFreq,
+                       remarkFulfillment, remarkUser, remarkSales
+                FROM occupation_realtime_status
+                WHERE switchId = %s
+                ORDER BY frequencyOffset
+                """,
+                (switch_id,),
+            )
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+@app.get("/api/occupation-records/planning-block/{planning_block_id}")
+def list_occupation_records_by_planning_block(planning_block_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, occupationCode, planningBlockId, planningBlockCode,
+                       switchId, switchCode, frequencyOffset, occupiedBandwidth,
+                       partitionStatus, isValid AS blockValid, statusUpdateTime, usageType,
+                       uplinkStartFreq, uplinkEndFreq, downlinkStartFreq, downlinkEndFreq,
+                       remarkFulfillment, remarkUser, remarkSales
+                FROM occupation_realtime_status
+                WHERE planningBlockId = %s
+                ORDER BY frequencyOffset
+                """,
+                (planning_block_id,),
+            )
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+@app.post("/api/occupation-records", status_code=201)
+def create_occupation_record(body: OccupationRecordCreate):
+    now_ms = int(time.time() * 1000)
+    occ_code = f"OCC-{now_ms}-{body.switchId}"
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO occupation_realtime_status
+                    (occupationCode, planningBlockId, planningBlockCode,
+                     switchId, switchCode, frequencyOffset, occupiedBandwidth,
+                     partitionStatus, statusUpdateTime, usageType,
+                     uplinkStartFreq, uplinkEndFreq, downlinkStartFreq, downlinkEndFreq,
+                     remarkFulfillment, remarkUser, remarkSales, isValid, createdAt)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, 'P', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    occ_code,
+                    body.planningBlockId,
+                    body.planningBlockCode,
+                    body.switchId,
+                    body.switchCode,
+                    body.frequencyOffset,
+                    body.occupiedBandwidth,
+                    now_ms,
+                    body.usageType,
+                    body.uplinkStartFreq,
+                    body.uplinkEndFreq,
+                    body.downlinkStartFreq,
+                    body.downlinkEndFreq,
+                    body.remarkFulfillment,
+                    body.remarkUser,
+                    body.remarkSales,
+                    1 if (body.blockValid is None or body.blockValid) else 0,
+                    now_ms,
+                ),
+            )
+            return {"id": cur.lastrowid}
+    except Exception as e:
+        raise db_error(e)
+
+
+@app.put("/api/occupation-records/{record_id}")
+def update_occupation_record(record_id: int, body: OccupationRecordUpdate):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                UPDATE occupation_realtime_status
+                SET frequencyOffset   = %s,
+                    occupiedBandwidth = %s,
+                    isValid           = %s,
+                    statusUpdateTime  = %s,
+                    usageType         = %s,
+                    uplinkStartFreq   = %s,
+                    uplinkEndFreq     = %s,
+                    downlinkStartFreq = %s,
+                    downlinkEndFreq   = %s,
+                    remarkFulfillment = %s,
+                    remarkUser        = %s,
+                    remarkSales       = %s
+                WHERE id = %s
+                """,
+                (
+                    body.frequencyOffset,
+                    body.occupiedBandwidth,
+                    1 if (body.blockValid is None or body.blockValid) else 0,
+                    int(time.time() * 1000),
+                    body.usageType,
+                    body.uplinkStartFreq,
+                    body.uplinkEndFreq,
+                    body.downlinkStartFreq,
+                    body.downlinkEndFreq,
+                    body.remarkFulfillment,
+                    body.remarkUser,
+                    body.remarkSales,
+                    record_id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="record not found")
+            return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise db_error(e)
+
+
+@app.delete("/api/occupation-records/{record_id}")
+def delete_occupation_record(record_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                "DELETE FROM occupation_realtime_status WHERE id = %s",
+                (record_id,),
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="record not found")
+            return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise db_error(e)
+
+# ══════════════════════════════════════════════════════════════════
+# 带宽合约-交付过程记录（P=占用 / R=释放）
+# ══════════════════════════════════════════════════════════════════
+
+@app.get("/api/delivery-records/allocation-block/{allocation_block_id}")
+def list_delivery_records_by_allocation_block(allocation_block_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, deliveryCode, allocationBlockId, allocationBlockCode,
+                       planningBlockId, planningBlockCode, switchId, switchCode,
+                       occupyStatus, usageType, contractNo, partyA,
+                       operateUser, supervisorUser, operateTime, remark, isValid, createdAt
+                FROM delivery_process_record
+                WHERE allocationBlockId = %s AND isValid = 1
+                ORDER BY operateTime DESC
+                """,
+                (allocation_block_id,),
+            )
+            return to_json(cur.fetchall())
+    except Exception as e:
+        raise db_error(e)
+
+
+@app.post("/api/delivery-records", status_code=201)
+def create_delivery_record(body: DeliveryRecordCreate):
+    now_ms = int(time.time() * 1000)
+    code = f"DLV-{now_ms}-{body.allocationBlockId or 0}"
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO delivery_process_record
+                    (deliveryCode, allocationBlockId, allocationBlockCode,
+                     planningBlockId, planningBlockCode, switchId, switchCode,
+                     occupyStatus, usageType, contractNo, partyA,
+                     operateUser, supervisorUser, operateTime, remark, isValid, createdAt)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s)
+                """,
+                (
+                    code, body.allocationBlockId, body.allocationBlockCode,
+                    body.planningBlockId, body.planningBlockCode,
+                    body.switchId, body.switchCode,
+                    body.occupyStatus, body.usageType,
+                    body.contractNo, body.partyA,
+                    body.operateUser, body.supervisorUser,
+                    now_ms, body.remark, now_ms,
+                ),
+            )
+            return {"id": cur.lastrowid}
+    except Exception as e:
+        raise db_error(e)
+
+
+@app.delete("/api/delivery-records/{record_id}")
+def delete_delivery_record(record_id: int):
+    try:
+        with get_cursor() as cur:
+            cur.execute(
+                "UPDATE delivery_process_record SET isValid=0 WHERE id=%s",
+                (record_id,),
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="record not found")
+            return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise db_error(e)
