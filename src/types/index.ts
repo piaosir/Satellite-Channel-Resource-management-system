@@ -1,295 +1,346 @@
-// 全局 TypeScript 类型定义
+/**
+ * 通道资源管理系统 — 类型定义(对应后端 v2.0 API / v6 数据模型)
+ * 三层模型:资源层(卫星→通道组→通道→矩阵/开关) / 状态层(规划/分配) / 业务层(客户→合约→交付)
+ */
 
+// ── 资源层 ────────────────────────────────────────────────────
 export interface Satellite {
   id: number;
   satelliteCode: string;
-  satelliteName: string;
-  // ── 卫星档案扩展字段（来自 satellite_info 002 迁移，均可空以兼容旧响应）──
-  orbitPosition?: string | null;
-  statusText?: string | null;            // 在轨运营 / 停止服务 / 离轨 / 在建
-  coverage?: string | null;
-  transponderCount?: string | null;
-  beacon?: string | null;
+  satelliteCodeNonStd: string | null;
+  satelliteName: string | null;
+  statusText: string | null;          // 在轨运营/在轨停服/离轨
+  orbitPosition: string | null;
+  launchDate: string | null;
+  designLife: string | null;
+  manufacturer: string | null;
+  platform: string | null;
+  coverage: string | null;
+  payload: string | null;
+  channelGroupCount?: number;
+  matrixCount?: number;
+}
+
+export interface Beacon {
+  id: number;
+  satelliteCode: string | null;
+  satelliteId: number | null;
+  band: string | null;
+  polarization: string | null;
+  frequency: number | null;
+}
+
+export interface ChannelGroup {
+  id: number;
+  channelGroupCode: string;
+  groupSeq: string | null;
+  satelliteCode: string | null;
+  satelliteId: number | null;
+  antennaName: string | null;         // 波束(天线)名称
+  antennaCode: string | null;         // 波束(天线)代号
+  txRxType: 'R' | 'T' | null;
+  polarization: string | null;
+  band: string | null;
+  channelCount: number | null;
+  primaryReceiverCode: string | null;
+  backupReceiverCode1: string | null;
+  backupReceiverCode2: string | null;
+  receiverActiveStatus: string | null;
+}
+
+export interface Channel {
+  id: number;
+  channelCode: string;
+  channelFullName: string | null;
+  channelShortName: string | null;
+  commonName: string | null;
+  channelGroupCode: string | null;
+  channelGroupId: number | null;
+  channelBandwidth: number | null;
+  channelStartFreq: number | null;
+  channelEndFreq: number | null;
+  // join 自通道组
+  satelliteCode?: string | null;
+  antennaName?: string | null;
+  antennaCode?: string | null;
+  txRxType?: 'R' | 'T' | null;
   polarization?: string | null;
-  launchDate?: string | null;
-  designLife?: string | null;
-  ownership?: string | null;             // 自有 / 代理
-  manufacturer?: string | null;
-  platform?: string | null;
-  attitudeStabilization?: string | null;
-  stationKeepingAccuracy?: string | null;
-  remark?: string | null;
+  band?: string | null;
 }
 
-/** 行波管 TWT — 对应 twt_realtime_status 表 */
-export interface Twt {
+export interface Matrix {
   id: number;
-  twtCodeLong: string | null;
-  twtCodeShort: string | null;
+  matrixCode: string;
   satelliteCode: string | null;
   satelliteId: number | null;
-  unitCode: string | null;
-  onOff: string | null;
-  mutingStatus: string | null;
-  gainMode: string | null;               // FGM / ALC
-  gainLevel: number | null;
-  statusUpdateTime: number | null;
+  matrixType: 1 | 2 | null;           // 1常规 2 DTP
+  matrixSeq: number | null;
+  inputPortCount: number | null;
+  outputPortCount: number | null;
+  effectiveStatus: 0 | 1 | null;
+  remark: string | null;
+  updateTime: string | null;
 }
 
-/** 通道属性（增益 / SFD）— 对应 channel_attribute_info 表 */
-export interface ChannelAttribute {
+export interface MatrixPort {
   id: number;
-  switchCode: string | null;
+  portCode: string | null;
+  matrixCode: string | null;
+  matrixId: number | null;
+  ioType: 'I' | 'O' | null;
+  portSeq: number | null;
+  channelShortName: string | null;
+  channelId: number | null;
+  channelCode?: string | null;
+  channelFullName?: string | null;
+  commonName?: string | null;
+  channelStartFreq?: number | null;
+  channelEndFreq?: number | null;
+  channelBandwidth?: number | null;
+}
+
+/** 矩阵开关全量视图(交叉点 + 入/出通道 + 通道组 + 放大器主备) */
+export interface MatrixSwitch {
+  id: number;
+  switchCode: string;
+  matrixId: number | null;
   matrixCode: string | null;
   inputPortSeq: number | null;
   outputPortSeq: number | null;
+  switchType: '常通' | '可切' | null;
+  switchStatus: 0 | 1 | null;
+  primaryAmpCode: string | null;
+  backupAmpCode1: string | null;
+  backupAmpCode2: string | null;
+  ampActiveStatus: string | null;     // P0/P1/P2
+  updateTime: string | null;
+  matrixType: 1 | 2 | null;
+  matrixSeq: number | null;
+  matrixRemark: string | null;
+  satelliteId: number | null;
+  satelliteCode: string | null;
   inputChannelShortName: string | null;
   outputChannelShortName: string | null;
-  gainMode: string | null;
-  currentLevel: number | null;
-  startLevel: number | null;
-  maxLevel: number | null;
-  levelStep: string | null;
-  startSfdRef: string | null;
-  currentSfd: string | null;
-  satelliteId: number | null;
+  inputChannelId: number | null;
+  inputChannelCode: string | null;
+  inputCommonName: string | null;
+  rxStartFreq: number | null;
+  rxEndFreq: number | null;
+  channelBandwidth: number | null;
+  outputChannelId: number | null;
+  outputChannelCode: string | null;
+  txStartFreq: number | null;
+  txEndFreq: number | null;
+  rxBand: string | null;
+  rxPolarization: string | null;
+  rxAntennaName: string | null;
+  rxAntennaCode: string | null;
+  txBand: string | null;
+  txPolarization: string | null;
+  txAntennaName: string | null;
+  txAntennaCode: string | null;
+}
+
+export interface SwitchLog {
+  id: number;
+  switchCode: string | null;
   switchId: number | null;
+  beforeStatus: string | null;
+  afterStatus: string | null;
+  switchTime: string | null;
+  operator: string | null;
+  registrar: string | null;
 }
 
-/** 开关组 — 对应 switch_group_info 表 */
-export interface SwitchGroup {
+export interface ReceiverLog {
   id: number;
-  switchGroupCode: string | null;
-  switchCode: string | null;
-  matrixCode: string | null;
-  inputPortSeq: number | null;
-  outputPortSeq: number | null;
-  inputChannelShortName: string | null;
-  outputChannelShortName: string | null;
-  switchStatus: number | null;           // 1 通 / 0 断
-  switchType: string | null;             // 常通 / 可切
-  checkRule: string | null;
-  satelliteId: number | null;
+  channelGroupCode: string | null;
+  channelGroupId: number | null;
+  beforeStatus: string | null;
+  afterStatus: string | null;
+  switchTime: string | null;
+  operator: string | null;
+  registrar: string | null;
 }
 
-/** 商品实例 — 对应 product_instance 表 */
-export interface ProductInstance {
+// ── 状态层 ────────────────────────────────────────────────────
+export type UsageType = '自用' | '出租' | '合作' | '禁用';
+
+/** 通道规划状态:基底,块 + 用途 */
+export interface PlanningBlock {
   id: number;
-  productInstanceCode: string | null;
-  subOrderCode: string | null;
-  productName: string | null;
-  instanceType: string | null;
-  unitPrice: number | null;
-  contractPeriod: string | null;
-  planStartTime: string | null;
-  planEndTime: string | null;
-  fulfillStatus: string | null;
-  subOrderCategory: string | null;
-  mainOrderCode: string | null;
-  contractNo: string | null;
-  partyA: string | null;
-  groupName: string | null;
-  sales: string | null;
-  reporter: string | null;
-  subOrderAmount: number | null;
-  mainOrderAmount: number | null;
-  bandwidthMHz: number | null;
+  blockCode: string;
+  usageType: UsageType | null;
+  isValid: 0 | 1 | null;
+  updateTime: string | null;
   satelliteCode: string | null;
-  frequencyBlockCode2: string | null;
-  exclusiveType: string | null;
-  remark: string | null;
+  satelliteId: number | null;
+  bandwidth: number | null;
+  uplinkPolarization: string | null;
+  uplinkBeam: string | null;
+  uplinkStartFreq: number | null;
+  uplinkEndFreq: number | null;
+  downlinkPolarization: string | null;
+  downlinkBeam: string | null;
+  downlinkStartFreq: number | null;
+  downlinkEndFreq: number | null;
+  channelId: number | null;
+  channelCode?: string | null;
+  channelShortName?: string | null;
+  commonName?: string | null;
+  channelStartFreq?: number | null;
+  channelEndFreq?: number | null;
+  channelBandwidth?: number | null;
 }
 
-/** 合约记录（新）— 对应 contract_record 表 */
-export interface ContractRecord {
+/** 通道分配状态:基于规划的实际占用快照。
+ *  isValid 与占用/释放互相独立:仅块被拆分或冲突时置 0。 */
+export interface AllocationBlock {
   id: number;
-  remarkInfo: string | null;
-  productInstanceId: string | null;
-  subOrderCode: string | null;
-  partyA: string | null;
+  blockCode: string;
+  isValid: 0 | 1 | null;
+  updateTime: string | null;
+  satelliteCode: string | null;
+  satelliteId: number | null;
+  bandwidth: number | null;
+  uplinkPolarization: string | null;
+  uplinkBeam: string | null;
+  uplinkStartFreq: number | null;
+  uplinkEndFreq: number | null;
+  downlinkPolarization: string | null;
+  downlinkBeam: string | null;
+  downlinkStartFreq: number | null;
+  downlinkEndFreq: number | null;
+  planningBlockId: number | null;
+  channelId: number | null;
+  planningBlockCode?: string | null;
+  planningUsageType?: UsageType | null;
+  channelCode?: string | null;
+  channelShortName?: string | null;
+  commonName?: string | null;
+  channelStartFreq?: number | null;
+  channelEndFreq?: number | null;
+  /** 合约占用余额(占用-释放,>0 表示有合约在用) */
+  contractBalance?: number;
+  /** 自有载波占用余额 */
+  carrierBalance?: number;
+  /** 当前占用方客户名(、分隔) */
+  occupantNames?: string | null;
+}
+
+// ── 业务层 ────────────────────────────────────────────────────
+export interface Customer {
+  customerCode: string;
+  customerName: string | null;
+  creditCode: string | null;
+  status: number | null;
+  createdTime: string | null;
+  updateTime: string | null;
+  users?: UserInfo[];
+}
+
+export interface UserInfo {
+  id: number;
+  customerCode: string | null;
+  customerName: string | null;
+  status: number | null;
+  createdTime: string | null;
+  updateTime: string | null;
+}
+
+export interface Contract {
+  id: number;
+  customerName: string | null;
+  customerCode: string | null;
+  userId: number | null;
+  mainOrderCode: string | null;
   productName: string | null;
-  contractNo: string | null;
-  remark: string | null;
-  frequencyBlockCode2: string | null;
-  exclusiveType: string | null;
-  usedBandwidth: number | null;
+  productType: string | null;
+  bandwidthMHz: number | null;
+  divisibleBlockCount: number | null;
+  periods: number | null;
+  amount: number | null;
   startTime: string | null;
   endTime: string | null;
-  satelliteCode: string | null;
-  uplinkBeamCode: string | null;
-  uplinkPolarization: string | null;
-  uplinkStartFreq: number | null;
-  uplinkEndFreq: number | null;
-  downlinkBeamCode: string | null;
-  downlinkPolarization: string | null;
-  downlinkStartFreq: number | null;
-  downlinkEndFreq: number | null;
-  satelliteId: number | null;
-  frequencyBlockId: number | null;
+  updateTime: string | null;
+  deliveryRecordCount?: number;
+  occupiedBandwidth?: number;
+  deliveryRecords?: DeliveryRecord[];
 }
 
-export interface Transponder {
-  switchId: number;
-  switchCode: string;
-  switchStatus: number;
-  switchType: string;
-  twtValidStatusCode: string | null;
-  transponderName: string;
-  rxStartFreq: number;
-  rxEndFreq: number;
-  channelBw: number;
-  txStartFreq: number;
-  txEndFreq: number;
-  band: string;
-  polarization: string | null;
-  antennaName: string | null;   // 映射自 channel_group_info.beamCode
-  txBand: string | null;
-  txPolarization: string | null;
-  txAntennaName: string | null;
-  txRxType: string;
-  matrixId: number;
-  matrixCode: string;
-  matrixRemark: string | null;
-  satelliteId: number;
-  inputChannelShortName: string;
-  outputChannelShortName: string;
-  inputChannelId: number;
-}
-
-/** 频率块 — 对应 frequency_block_realtime_status 表 */
-export interface FrequencyBlock {
-  id: number;
-  frequencyBlockCode: string | null;
-  frequencyBlockCode2: string | null;
-  switchId: number;
-  switchCode: string | null;
-  frequencyOffset: number;
-  occupiedBandwidth: number;
-  /** P = 划分（在用）  R = 回收（空闲）  N = 无效 */
-  partitionStatus: 'P' | 'R' | 'N';
-  statusUpdateTime: number | null;
-  /** 出租 / 合作 / 自用 / 禁用 */
-  usageType: string | null;
-  uplinkStartFreq: number | null;
-  uplinkEndFreq: number | null;
-  downlinkStartFreq: number | null;
-  downlinkEndFreq: number | null;
-}
-
-/** 频率块（含转发器/通道/矩阵完整关联字段，供报表/管理页） */
-export interface FrequencyBlockFull extends FrequencyBlock {
-  switchStatus: number;
-  switchType: string;
-  twtValidStatusCode: string | null;
-  inputChannelShortName: string;
-  outputChannelShortName: string;
-  transponderName: string;
-  inputChannelId: number;
-  satelliteCode: string;
-  areaNo: number;
-  groupNo: number;
-  matrixCode: string;
-  matrixRemark: string | null;
-  band: string;
-  polarization: string | null;
-  txRxType: string;
-  antennaName: string | null;
-  txBand: string | null;
-  txPolarization: string | null;
-  txAntennaName: string | null;
-  channelStartFreq: number;
-  channelEndFreq: number;
-  channelBandwidth: number;
-  txChannelStartFreq: number;
-  txChannelEndFreq: number;
-  txChannelBandwidth: number;
-}
-
-/** 向后兼容：Occupation 已重命名为 FrequencyBlock */
-export type Occupation = FrequencyBlock;
-
-/** 分配块 — 对应 occupation_realtime_status 表（分频工程师在规划块上二次分配） */
-export interface OccupationRecord {
-  id: number;
-  occupationCode: string | null;
-  /** 关联的规划块 ID（FK → frequency_block_realtime_status.id） */
-  planningBlockId: number | null;
-  /** 关联的规划块代码（冗余存储，来自 frequencyBlockCode2） */
-  planningBlockCode: string | null;
-  switchId: number;
-  switchCode: string | null;
-  frequencyOffset: number;
-  occupiedBandwidth: number;
-  /** P = 划分（在用）  R = 回收（空闲）  N = 无效 */
-  partitionStatus: 'P' | 'R' | 'N' | null;
-  /** 分配块有效性：1=有效  0=无效 */
-  blockValid: number | null;
-  statusUpdateTime: number | null;
-  /** 继承自规划块：出租 / 合作 / 自用 / 禁用 */
-  usageType: string | null;
-  uplinkStartFreq: number | null;
-  uplinkEndFreq: number | null;
-  downlinkStartFreq: number | null;
-  downlinkEndFreq: number | null;
-  remarkFulfillment: string | null;
-  remarkUser: string | null;
-  remarkSales: string | null;
-}
-
-/** 带宽合约-交付过程记录 — 对应 delivery_process_record 表 */
+/** 合约-交付过程记录:频率块代码必须引用通道分配状态 */
 export interface DeliveryRecord {
   id: number;
-  deliveryCode: string | null;
-  allocationBlockId: number | null;
-  allocationBlockCode: string | null;
-  planningBlockId: number | null;
-  planningBlockCode: string | null;
-  switchId: number | null;
-  switchCode: string | null;
-  /** P=占用  R=释放 */
-  occupyStatus: 'P' | 'R' | null;
-  usageType: string | null;
-  contractNo: string | null;
-  partyA: string | null;
-  operateUser: string | null;
-  supervisorUser: string | null;
-  operateTime: number | null;
-  remark: string | null;
-  isValid: number | null;
-  createdAt: number | null;
+  contractId: number | null;
+  blockCode: string | null;
+  allocationId: number | null;
+  exclusiveType: string | null;       // 独占/共享
+  satelliteCode: string | null;
+  satelliteId: number | null;
+  bandwidth: number | null;
+  action: '占用' | '释放' | null;
+  actionTime: string | null;
+  handler: string | null;
+  registrar: string | null;
+  allocationIsValid?: 0 | 1 | null;
+  customerName?: string | null;
+  productName?: string | null;
 }
 
-/** 通道占用记录（含转发器/通道/规划块完整关联字段，供管理页） */
-export interface OccupationRecordFull extends OccupationRecord {
-  /** 规划块用途 */
-  planningUsageType: string | null;
-  /** 规划块偏移量 */
-  planningOffset: number | null;
-  /** 规划块带宽 */
-  planningBandwidth: number | null;
-  switchStatus: number;
-  switchType: string;
-  twtValidStatusCode: string | null;
-  inputChannelShortName: string;
-  outputChannelShortName: string;
-  transponderName: string;
-  inputChannelId: number;
-  satelliteCode: string;
-  areaNo: number;
-  groupNo: number;
-  matrixCode: string;
-  matrixRemark: string | null;
-  band: string;
-  polarization: string | null;
-  txRxType: string;
-  antennaName: string | null;
-  txBand: string | null;
-  txPolarization: string | null;
-  txAntennaName: string | null;
-  channelStartFreq: number;
-  channelEndFreq: number;
-  channelBandwidth: number;
-  txChannelStartFreq: number;
-  txChannelEndFreq: number;
-  txChannelBandwidth: number;
+export interface BusinessSystem {
+  id: number;
+  systemCode: string | null;
+  basebandName: string | null;
+  createdTime: string | null;
+  updateTime: string | null;
+}
+
+export interface Carrier {
+  id: number;
+  businessSystemId: number | null;
+  direction: string | null;           // 前向/返向
+  bandwidth: number | null;
+}
+
+export interface CarrierUsageRecord {
+  id: number;
+  carrierId: number | null;
+  blockCode: string | null;
+  allocationId: number | null;
+  exclusiveType: string | null;
+  satelliteCode: string | null;
+  satelliteId: number | null;
+  bandwidth: number | null;
+  action: '占用' | '释放' | null;
+  actionTime: string | null;
+  handler: string | null;
+  registrar: string | null;
+  allocationIsValid?: 0 | 1 | null;
+}
+
+// ── 统计 ──────────────────────────────────────────────────────
+export interface SatelliteStats {
+  byBand: {
+    band: string;
+    designBw: number;      // 设计带宽(全部接收通道)
+    maxBw: number;         // 最大带宽(开关置1的通道)
+    plannedBw: number;     // 已规划(有效规划块)
+    allocatedBw: number;   // 已分配(有效分配块)
+    occupiedBw: number;    // 已用(实际占用,非空闲)
+  }[];
+  byUsageType: { usageType: string; bw: number; blockCount: number }[];
+  allocation: { totalBlocks: number; validBlocks: number; validBw: number };
+  usage: {
+    maxBw: number;
+    occupiedBw: number;
+    occupiedBlocks: number;
+    idleAllocatedBw: number;
+    utilization: number;   // 已用/最大,百分比
+  };
+  summary: {
+    totalDesignBw: number;
+    totalMaxBw: number;
+    totalPlannedBw: number;
+    totalOccupiedBw: number;
+  };
 }

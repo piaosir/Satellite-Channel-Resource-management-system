@@ -9,12 +9,7 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
-  optimizeDeps: {},
   server: {
-    headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin', // sql.js WASM 需要 SharedArrayBuffer
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-    },
     // /api/* 请求代理到 Python FastAPI 后端（server/main.py，默认 8000 端口）
     proxy: {
       '/api': {

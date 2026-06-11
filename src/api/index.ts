@@ -1,26 +1,12 @@
+/**
+ * 通道资源管理系统 — API 客户端(后端 v2.0,/docs 为契约源)
+ */
 import type {
-  Satellite, Transponder, FrequencyBlock, FrequencyBlockFull,
-  Twt, ChannelAttribute, SwitchGroup, ProductInstance, ContractRecord,
-  OccupationRecord, OccupationRecordFull, DeliveryRecord,
+  Satellite, Beacon, ChannelGroup, Channel, Matrix, MatrixPort, MatrixSwitch,
+  SwitchLog, ReceiverLog, PlanningBlock, AllocationBlock,
+  Customer, UserInfo, Contract, DeliveryRecord,
+  BusinessSystem, Carrier, CarrierUsageRecord, SatelliteStats, UsageType,
 } from '@/types';
-
-export interface BandStat {
-  band: string;
-  designBw: number;
-  usedBw: number;
-  recoveredBw: number;
-}
-
-export interface BandwidthStats {
-  byBand: BandStat[];
-  byUsageType: { usageType: string; bw: number }[];
-  summary: {
-    totalDesignBw: number;
-    usedBw: number;
-    recoveredBw: number;
-    totalOccupiedBw: number;
-  };
-}
 
 const BASE = '/api';
 
@@ -33,160 +19,183 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ── 卫星 ──────────────────────────────────────────────────────
+const jsonBody = (method: string, data: unknown): RequestInit => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+});
+
+// ── 资源层:卫星 / 信标 ────────────────────────────────────────
 export const fetchSatellites = (): Promise<Satellite[]> =>
   apiFetch('/satellites');
 
 export const fetchSatelliteDetail = (id: number): Promise<Satellite> =>
   apiFetch(`/satellites/${id}`);
 
-// ── 转发器（含频率/波束/开关状态） ───────────────────────────
-export const fetchTransponders = (satelliteId: number): Promise<Transponder[]> =>
-  apiFetch(`/transponders/${satelliteId}`);
+export const fetchBeacons = (satelliteId: number): Promise<Beacon[]> =>
+  apiFetch(`/satellites/${satelliteId}/beacons`);
 
-// ── 频率块（按开关） ──────────────────────────────────────────
-export const fetchFrequencyBlocks = (switchId: number): Promise<FrequencyBlock[]> =>
-  apiFetch(`/frequency-blocks/${switchId}`);
+// ── 资源层:通道组 / 通道 ──────────────────────────────────────
+export const fetchChannelGroups = (satelliteId: number): Promise<ChannelGroup[]> =>
+  apiFetch(`/satellites/${satelliteId}/channel-groups`);
 
-// ── 频率块（按卫星，含完整关联字段，供报表/管理页） ──────────
-export const fetchFrequencyBlocksBySatellite = (satelliteId: number): Promise<FrequencyBlockFull[]> =>
-  apiFetch(`/frequency-blocks/satellite/${satelliteId}`);
+export const fetchChannels = (satelliteId: number): Promise<Channel[]> =>
+  apiFetch(`/satellites/${satelliteId}/channels`);
 
-// ── 新建频率块 ────────────────────────────────────────────────
-export const createFrequencyBlock = (data: Partial<FrequencyBlock>): Promise<{ id: number }> =>
-  apiFetch('/frequency-blocks', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+export const updateChannelCommonName = (channelId: number, commonName: string) =>
+  apiFetch<{ ok: boolean }>(`/channels/${channelId}/common-name`,
+    jsonBody('PATCH', { commonName }));
 
-// ── 更新频率块 ────────────────────────────────────────────────
-export const updateFrequencyBlock = (
-  id: number,
-  data: Partial<FrequencyBlock>,
-): Promise<{ ok: boolean }> =>
-  apiFetch(`/frequency-blocks/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+export const switchReceiver = (groupId: number, data: {
+  receiverActiveStatus: string; operator?: string; registrar?: string;
+}) =>
+  apiFetch<{ ok: boolean }>(`/channel-groups/${groupId}/receiver`, jsonBody('PATCH', data));
 
-// ── 删除频率块 ────────────────────────────────────────────────
-export const deleteFrequencyBlock = (id: number): Promise<{ ok: boolean }> =>
-  apiFetch(`/frequency-blocks/${id}`, { method: 'DELETE' });
+export const fetchReceiverLogs = (channelGroupCode?: string): Promise<ReceiverLog[]> =>
+  apiFetch(`/logs/receiver${channelGroupCode ? `?channelGroupCode=${encodeURIComponent(channelGroupCode)}` : ''}`);
 
-// ── 修改通道常用名称 ──────────────────────────────────────────
-export const updateChannelCommonName = (
-  channelId: number,
-  commonName: string,
-): Promise<{ ok: boolean }> =>
-  apiFetch(`/channels/${channelId}/common-name`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ commonName }),
-  });
+// ── 资源层:矩阵 / 端口 / 开关 ─────────────────────────────────
+export const fetchMatrices = (satelliteId: number, effectiveOnly = true): Promise<Matrix[]> =>
+  apiFetch(`/satellites/${satelliteId}/matrices?effective_only=${effectiveOnly}`);
 
-// ── 资源统计（设计带宽 / 在用带宽 / 使用类型，服务端聚合） ─────
-export const fetchStats = (satelliteId: number): Promise<BandwidthStats> =>
-  apiFetch(`/stats/${satelliteId}`);
+export const fetchMatrixPorts = (matrixId: number): Promise<MatrixPort[]> =>
+  apiFetch(`/matrices/${matrixId}/ports`);
 
-// ── 冲突检测用：某开关的占用列表（排除指定记录 ID） ──────────
-export async function fetchFrequencyBlocksForConflict(
-  switchId: number,
-  excludeId?: number,
-): Promise<Pick<FrequencyBlock, 'id' | 'frequencyOffset' | 'occupiedBandwidth'>[]> {
-  const all = await fetchFrequencyBlocks(switchId);
-  return all
-    .filter((b) => excludeId == null || b.id !== excludeId)
-    .map((b) => ({ id: b.id, frequencyOffset: b.frequencyOffset, occupiedBandwidth: b.occupiedBandwidth }));
-}
+export const fetchSwitches = (satelliteId: number): Promise<MatrixSwitch[]> =>
+  apiFetch(`/satellites/${satelliteId}/switches`);
 
-// ── 行波管 TWT ────────────────────────────────────────────────
-export const fetchTwts = (satelliteId: number): Promise<Twt[]> =>
-  apiFetch(`/twt/satellite/${satelliteId}`);
+export const fetchMatrixSwitches = (matrixId: number): Promise<MatrixSwitch[]> =>
+  apiFetch(`/matrices/${matrixId}/switches`);
 
-export const updateTwt = (
-  id: number,
-  data: Partial<Pick<Twt, 'onOff' | 'mutingStatus' | 'gainMode' | 'gainLevel'>>,
-): Promise<{ ok: boolean }> =>
-  apiFetch(`/twt/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+export const toggleSwitch = (switchId: number, data: {
+  switchStatus: number; operator?: string; registrar?: string;
+}) =>
+  apiFetch<{ ok: boolean }>(`/switches/${switchId}/status`, jsonBody('PATCH', data));
 
-// ── 通道属性（增益 / SFD） ────────────────────────────────────
-export const fetchChannelAttributes = (satelliteId: number): Promise<ChannelAttribute[]> =>
-  apiFetch(`/channel-attributes/satellite/${satelliteId}`);
+export const switchAmplifier = (switchId: number, data: {
+  ampActiveStatus: string; operator?: string; registrar?: string;
+}) =>
+  apiFetch<{ ok: boolean }>(`/switches/${switchId}/amplifier`, jsonBody('PATCH', data));
 
-// ── 开关组 ────────────────────────────────────────────────────
-export const fetchSwitchGroups = (satelliteId: number): Promise<SwitchGroup[]> =>
-  apiFetch(`/switch-groups/satellite/${satelliteId}`);
+export const fetchSwitchLogs = (switchCode?: string): Promise<SwitchLog[]> =>
+  apiFetch(`/logs/matrix-switch${switchCode ? `?switchCode=${encodeURIComponent(switchCode)}` : ''}`);
 
-// ── 合约记录（新） ────────────────────────────────────────────
-export const fetchContracts = (satelliteCode?: string): Promise<ContractRecord[]> =>
-  apiFetch(`/contracts${satelliteCode ? `?satellite=${encodeURIComponent(satelliteCode)}` : ''}`);
+export const fetchAmplifierLogs = (switchCode?: string): Promise<SwitchLog[]> =>
+  apiFetch(`/logs/amplifier${switchCode ? `?switchCode=${encodeURIComponent(switchCode)}` : ''}`);
 
-// ── 商品实例清单 ──────────────────────────────────────────────
-export const fetchProductInstances = (): Promise<ProductInstance[]> =>
-  apiFetch('/product-instances');
+// ── 状态层:通道规划状态(基底) ────────────────────────────────
+export const fetchPlanningBlocks = (
+  satelliteId: number,
+  opts?: { usageType?: UsageType; validOnly?: boolean },
+): Promise<PlanningBlock[]> => {
+  const q = new URLSearchParams();
+  if (opts?.usageType) q.set('usage_type', opts.usageType);
+  if (opts?.validOnly) q.set('valid_only', 'true');
+  const qs = q.toString();
+  return apiFetch(`/satellites/${satelliteId}/planning-blocks${qs ? `?${qs}` : ''}`);
+};
 
-// ── 通道占用记录（按卫星，含完整关联字段）────────────────────
-export const fetchOccupationRecordsBySatellite = (satelliteId: number): Promise<OccupationRecordFull[]> =>
-  apiFetch(`/occupation-records/satellite/${satelliteId}`);
+export const createPlanningBlock = (data: Partial<PlanningBlock>) =>
+  apiFetch<{ id: number; blockCode: string }>('/planning-blocks', jsonBody('POST', data));
 
-// ── 通道占用记录（按开关） ────────────────────────────────────
-export const fetchOccupationRecordsBySwitch = (switchId: number): Promise<OccupationRecord[]> =>
-  apiFetch(`/occupation-records/switch/${switchId}`);
+export const updatePlanningBlock = (id: number, data: {
+  usageType?: string; isValid?: number;
+  uplinkStartFreq?: number; uplinkEndFreq?: number;
+  downlinkStartFreq?: number; downlinkEndFreq?: number;
+}) =>
+  apiFetch<{ ok: boolean; blockCode: string }>(`/planning-blocks/${id}`, jsonBody('PUT', data));
 
-// ── 新建占用记录 ──────────────────────────────────────────────
-export const createOccupationRecord = (data: Partial<OccupationRecord>): Promise<{ id: number }> =>
-  apiFetch('/occupation-records', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+export const deletePlanningBlock = (id: number) =>
+  apiFetch<{ ok: boolean }>(`/planning-blocks/${id}`, { method: 'DELETE' });
 
-// ── 更新占用记录 ──────────────────────────────────────────────
-export const updateOccupationRecord = (
-  id: number,
-  data: Partial<OccupationRecord>,
-): Promise<{ ok: boolean }> =>
-  apiFetch(`/occupation-records/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+// ── 状态层:通道分配状态(基于规划的实际占用) ──────────────────
+export const fetchAllocationBlocks = (
+  satelliteId: number, validOnly = false,
+): Promise<AllocationBlock[]> =>
+  apiFetch(`/satellites/${satelliteId}/allocation-blocks?valid_only=${validOnly}`);
 
-// ── 删除占用记录 ──────────────────────────────────────────────
-export const deleteOccupationRecord = (id: number): Promise<{ ok: boolean }> =>
-  apiFetch(`/occupation-records/${id}`, { method: 'DELETE' });
+export const fetchAllocationBlocksOfPlanning = (planningBlockId: number): Promise<AllocationBlock[]> =>
+  apiFetch(`/planning-blocks/${planningBlockId}/allocation-blocks`);
 
-// ── 通道占用记录（按规划块，冲突检测用） ─────────────────────
-export const fetchOccupationRecordsByPlanningBlock = (planningBlockId: number): Promise<OccupationRecord[]> =>
-  apiFetch(`/occupation-records/planning-block/${planningBlockId}`);
+export const createAllocationBlock = (data: Partial<AllocationBlock>) =>
+  apiFetch<{ id: number; blockCode: string; planningBlockId: number }>(
+    '/allocation-blocks', jsonBody('POST', data));
 
-// ── 冲突检测用：某规划块内的占用列表（排除指定记录 ID） ────────
-export async function fetchOccupationRecordsForConflict(
-  planningBlockId: number,
-  excludeId?: number,
-): Promise<Pick<OccupationRecord, 'id' | 'frequencyOffset' | 'occupiedBandwidth'>[]> {
-  const all = await fetchOccupationRecordsByPlanningBlock(planningBlockId);
-  return all
-    .filter((r) => excludeId == null || r.id !== excludeId)
-    .map((r) => ({ id: r.id, frequencyOffset: r.frequencyOffset, occupiedBandwidth: r.occupiedBandwidth }));
-}
+export const updateAllocationBlock = (id: number, data: {
+  isValid?: number; uplinkStartFreq?: number; uplinkEndFreq?: number;
+}) =>
+  apiFetch<{ ok: boolean; blockCode: string; planningBlockId: number }>(
+    `/allocation-blocks/${id}`, jsonBody('PUT', data));
 
-// ── 带宽合约-交付过程记录 ─────────────────────────────────────
-export const fetchDeliveryRecordsByAllocationBlock = (allocationBlockId: number): Promise<DeliveryRecord[]> =>
-  apiFetch(`/delivery-records/allocation-block/${allocationBlockId}`);
+export const deleteAllocationBlock = (id: number) =>
+  apiFetch<{ ok: boolean }>(`/allocation-blocks/${id}`, { method: 'DELETE' });
 
-export const createDeliveryRecord = (data: Partial<DeliveryRecord>): Promise<{ id: number }> =>
-  apiFetch('/delivery-records', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+// ── 业务层:客户 / 用户 / 合约 ─────────────────────────────────
+export const fetchCustomers = (opts?: {
+  search?: string; offset?: number; limit?: number;
+}): Promise<{ total: number; items: Customer[] }> => {
+  const q = new URLSearchParams();
+  if (opts?.search) q.set('search', opts.search);
+  if (opts?.offset != null) q.set('offset', String(opts.offset));
+  if (opts?.limit != null) q.set('limit', String(opts.limit));
+  const qs = q.toString();
+  return apiFetch(`/customers${qs ? `?${qs}` : ''}`);
+};
 
-export const deleteDeliveryRecord = (id: number): Promise<{ ok: boolean }> =>
-  apiFetch(`/delivery-records/${id}`, { method: 'DELETE' });
+export const fetchCustomerDetail = (customerCode: string): Promise<Customer> =>
+  apiFetch(`/customers/${encodeURIComponent(customerCode)}`);
+
+export const fetchUsers = (): Promise<UserInfo[]> => apiFetch('/users');
+
+export const fetchContracts = (opts?: {
+  customerCode?: string; satellite?: string;
+}): Promise<Contract[]> => {
+  const q = new URLSearchParams();
+  if (opts?.customerCode) q.set('customer_code', opts.customerCode);
+  if (opts?.satellite) q.set('satellite', opts.satellite);
+  const qs = q.toString();
+  return apiFetch(`/contracts${qs ? `?${qs}` : ''}`);
+};
+
+export const fetchContractDetail = (id: number): Promise<Contract> =>
+  apiFetch(`/contracts/${id}`);
+
+// ── 业务层:交付过程记录(占用/释放) ───────────────────────────
+export const fetchDeliveryRecordsOfBlock = (allocationId: number): Promise<DeliveryRecord[]> =>
+  apiFetch(`/allocation-blocks/${allocationId}/delivery-records`);
+
+export const fetchCarrierUsageRecordsOfBlock = (allocationId: number): Promise<CarrierUsageRecord[]> =>
+  apiFetch(`/allocation-blocks/${allocationId}/carrier-usage-records`);
+
+export const createDeliveryRecord = (data: {
+  contractId: number; blockCode: string; action: '占用' | '释放';
+  exclusiveType?: string; bandwidth?: number; handler?: string; registrar?: string;
+}) =>
+  apiFetch<{ id: number; allocationId: number }>('/delivery-records', jsonBody('POST', data));
+
+// ── 业务层:自有业务系统 / 载波 / 使用记录 ─────────────────────
+export const fetchBusinessSystems = (): Promise<BusinessSystem[]> =>
+  apiFetch('/business-systems');
+
+export const fetchCarriers = (businessSystemId?: number): Promise<Carrier[]> =>
+  apiFetch(`/carriers${businessSystemId ? `?business_system_id=${businessSystemId}` : ''}`);
+
+export const fetchCarrierUsageRecords = (opts?: {
+  satellite?: string; carrierId?: number;
+}): Promise<CarrierUsageRecord[]> => {
+  const q = new URLSearchParams();
+  if (opts?.satellite) q.set('satellite', opts.satellite);
+  if (opts?.carrierId != null) q.set('carrier_id', String(opts.carrierId));
+  const qs = q.toString();
+  return apiFetch(`/carrier-usage-records${qs ? `?${qs}` : ''}`);
+};
+
+export const createCarrierUsageRecord = (data: {
+  blockCode: string; action: '占用' | '释放'; carrierId?: number;
+  exclusiveType?: string; bandwidth?: number; handler?: string; registrar?: string;
+}) =>
+  apiFetch<{ id: number; allocationId: number }>('/carrier-usage-records', jsonBody('POST', data));
+
+// ── 统计 ──────────────────────────────────────────────────────
+export const fetchStats = (satelliteId: number): Promise<SatelliteStats> =>
+  apiFetch(`/satellites/${satelliteId}/stats`);

@@ -1,257 +1,209 @@
+/**
+ * 资源总览 — 当前卫星档案 + 频段带宽 + 规划用途分布 + 分配概况
+ */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Tag } from 'antd';
-import {
-  SearchOutlined,
-  BarChartOutlined,
-  ToolOutlined,
-  FileDoneOutlined,
-  HistoryOutlined,
-  DeploymentUnitOutlined,
-  CloudServerOutlined,
-  SwitcherOutlined,
-  ThunderboltOutlined,
-  FileExcelOutlined,
-} from '@ant-design/icons';
+import { Card, Descriptions, Statistic, Row, Col, Tag, Spin, Empty, Progress, Tooltip } from 'antd';
+import ReactECharts from 'echarts-for-react';
 import { useStore } from '@/store/useStore';
-import { fetchSatellites, fetchSatelliteDetail } from '@/api';
-import { PERMISSIONS } from '@/utils/roleGuard';
-import type { Role } from '@/store/useStore';
-import type { Satellite } from '@/types';
+import { fetchSatelliteDetail, fetchBeacons, fetchStats } from '@/api';
+import type { Satellite, Beacon, SatelliteStats } from '@/types';
+import { USAGE_COLORS } from '@/utils/freq';
 
-// 卫星状态 → 标签颜色
-const SAT_STATUS_COLOR: Record<string, string> = {
-  在轨运营: 'green',
-  在建: 'blue',
-  停止服务: 'default',
-  离轨: 'red',
-};
-
-interface FuncCard {
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  path: string;
-  color: string;
-}
-
-const ALL_CARDS: Array<FuncCard & { check: (r: Role) => boolean }> = [
-  {
-    icon: <SearchOutlined />,
-    title: '资源查询',
-    desc: '查看卫星通道频率占用状态，支持频段/极化等多维筛选',
-    path: '/query',
-    color: '#3b82f6',
-    check: (r) => PERMISSIONS.canAccessQuery(r),
-  },
-  {
-    icon: <BarChartOutlined />,
-    title: '资源统计',
-    desc: '频率资源使用率可视化，按频段/使用类型分析占用分布',
-    path: '/stats',
-    color: '#22c55e',
-    check: (r) => PERMISSIONS.canAccessStats(r),
-  },
-  {
-    icon: <ToolOutlined />,
-    title: '占用管理',
-    desc: '新建、编辑、删除频率占用记录，支持实时冲突检测',
-    path: '/occupation',
-    color: '#f59e0b',
-    check: (r) => PERMISSIONS.canManageOccupation(r),
-  },
-  {
-    icon: <FileDoneOutlined />,
-    title: '合约记录管理',
-    desc: '管理频率租用合约，跟踪合约状态与客户信息',
-    path: '/contracts',
-    color: '#06b6d4',
-    check: (r) => PERMISSIONS.canAccessContracts(r),
-  },
-  {
-    icon: <HistoryOutlined />,
-    title: '使用记录管理',
-    desc: '查看频率资源使用历史，跟踪运行状态与时间记录',
-    path: '/usage',
-    color: '#8b5cf6',
-    check: (r) => PERMISSIONS.canAccessUsage(r),
-  },
-  {
-    icon: <DeploymentUnitOutlined />,
-    title: '载波规划管理',
-    desc: '制定与跟踪频率资源及载波分配规划方案',
-    path: '/planning',
-    color: '#ec4899',
-    check: (r) => PERMISSIONS.canAccessPlanning(r),
-  },
-  {
-    icon: <CloudServerOutlined />,
-    title: '地面系统管理',
-    desc: '监控关口站、信关站等地面系统在线状态与连接情况',
-    path: '/ground',
-    color: '#10b981',
-    check: (r) => PERMISSIONS.canAccessGround(r),
-  },
-  {
-    icon: <SwitcherOutlined />,
-    title: '通道配置管理',
-    desc: '查看并控制卫星通道开关状态，进行在线配置操作',
-    path: '/channel-config',
-    color: '#84cc16',
-    check: (r) => PERMISSIONS.canAccessChannelConfig(r),
-  },
-  {
-    icon: <ThunderboltOutlined />,
-    title: '行波管状态管理',
-    desc: '控制 TWTA 静噪、档位调整、FGM/ALC 模式与备份切换',
-    path: '/twta',
-    color: '#ef4444',
-    check: (r) => PERMISSIONS.canAccessTWTA(r),
-  },
-  {
-    icon: <FileExcelOutlined />,
-    title: '报表导出',
-    desc: '自定义字段，导出 Excel 格式的射频矩阵占用报表',
-    path: '/report',
-    color: '#f97316',
-    check: (_r) => true,
-  },
-];
-
-function ProfileField({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div style={{ minWidth: 110 }}>
-      <div style={{ color: '#475569', fontSize: 11, marginBottom: 4 }}>{label}</div>
-      <div style={{ color: '#cbd5e1', fontSize: 13, fontWeight: 500, whiteSpace: 'pre-line' }}>
-        {value || '—'}
-      </div>
-    </div>
-  );
-}
-
-function SatelliteProfile({ sat }: { sat: Satellite }) {
-  return (
-    <div
-      style={{
-        background: '#1e293b',
-        border: '1px solid #334155',
-        borderRadius: 12,
-        padding: '20px 24px',
-        marginBottom: 36,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        <span style={{ color: '#e2e8f0', fontSize: 18, fontWeight: 700 }}>{sat.satelliteName}</span>
-        <span style={{ color: '#3b82f6', fontFamily: 'monospace', fontSize: 13 }}>{sat.satelliteCode}</span>
-        {sat.statusText && <Tag color={SAT_STATUS_COLOR[sat.statusText] ?? 'default'}>{sat.statusText}</Tag>}
-        {sat.ownership && (
-          <Tag color={sat.ownership === '自有' ? 'geekblue' : 'purple'}>{sat.ownership}</Tag>
-        )}
-      </div>
-      <div style={{ display: 'flex', gap: 32, rowGap: 16, flexWrap: 'wrap', marginBottom: sat.coverage ? 16 : 0 }}>
-        <ProfileField label="轨道位置" value={sat.orbitPosition} />
-        <ProfileField label="卫星平台" value={sat.platform} />
-        <ProfileField label="转发器数量" value={sat.transponderCount} />
-        <ProfileField label="发射时间" value={sat.launchDate} />
-        <ProfileField label="设计寿命" value={sat.designLife} />
-        <ProfileField label="极化方式" value={sat.polarization} />
-        <ProfileField label="制造商" value={sat.manufacturer} />
-        <ProfileField label="位保精度" value={sat.stationKeepingAccuracy} />
-      </div>
-      {sat.coverage && (
-        <div style={{ borderTop: '1px solid #283548', paddingTop: 14 }}>
-          <div style={{ color: '#475569', fontSize: 11, marginBottom: 4 }}>覆盖范围</div>
-          <div style={{ color: '#94a3b8', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-            {sat.coverage}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+const cardStyle = { background: '#0c1a2e', border: '1px solid #1e3a5f' };
 
 export default function Dashboard() {
-  const navigate = useNavigate();
-  const { role, selectedSatelliteId, setSatellite } = useStore();
+  const { selectedSatelliteId, dataVersion } = useStore();
   const [sat, setSat] = useState<Satellite | null>(null);
+  const [beacons, setBeacons] = useState<Beacon[]>([]);
+  const [stats, setStats] = useState<SatelliteStats | null>(null);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (selectedSatelliteId) return;
-    fetchSatellites().then((list) => {
-      if (list.length > 0) setSatellite(list[0].id);
-    }).catch(console.error);
-  }, [selectedSatelliteId, setSatellite]);
+    if (!selectedSatelliteId) return;
+    setLoading(true);
+    Promise.all([
+      fetchSatelliteDetail(selectedSatelliteId),
+      fetchBeacons(selectedSatelliteId),
+      fetchStats(selectedSatelliteId),
+    ])
+      .then(([s, b, st]) => { setSat(s); setBeacons(b); setStats(st); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [selectedSatelliteId, dataVersion]);
 
-  useEffect(() => {
-    if (!selectedSatelliteId) { setSat(null); return; }
-    fetchSatelliteDetail(selectedSatelliteId).then(setSat).catch(console.error);
-  }, [selectedSatelliteId]);
+  if (!selectedSatelliteId) return <Empty style={{ marginTop: 80 }} description="请选择卫星" />;
 
-  const cards = role
-    ? ALL_CARDS.filter((c) => c.check(role))
-    : [];
+  const bandOption = stats && {
+    backgroundColor: 'transparent',
+    grid: { left: 50, right: 20, top: 30, bottom: 24 },
+    tooltip: { trigger: 'axis' },
+    legend: { textStyle: { color: '#94a3b8', fontSize: 11 }, top: 0 },
+    xAxis: {
+      type: 'category',
+      data: stats.byBand.map((b) => b.band),
+      axisLabel: { color: '#94a3b8' },
+      axisLine: { lineStyle: { color: '#2d4a6e' } },
+    },
+    yAxis: {
+      type: 'value', name: 'MHz',
+      nameTextStyle: { color: '#4a6a8a' },
+      axisLabel: { color: '#94a3b8' },
+      splitLine: { lineStyle: { color: '#16263d' } },
+    },
+    series: [
+      { name: '设计带宽', type: 'bar', data: stats.byBand.map((b) => b.designBw), itemStyle: { color: '#2d4a6e' }, barMaxWidth: 26 },
+      { name: '最大带宽(开关通)', type: 'bar', data: stats.byBand.map((b) => b.maxBw), itemStyle: { color: '#64748b' }, barMaxWidth: 26 },
+      { name: '已规划', type: 'bar', data: stats.byBand.map((b) => b.plannedBw), itemStyle: { color: '#3b82f6' }, barMaxWidth: 26 },
+      { name: '已分配', type: 'bar', data: stats.byBand.map((b) => b.allocatedBw), itemStyle: { color: '#22c55e' }, barMaxWidth: 26 },
+      { name: '已用(实际占用)', type: 'bar', data: stats.byBand.map((b) => b.occupiedBw), itemStyle: { color: '#f59e0b' }, barMaxWidth: 26 },
+    ],
+  };
+
+  const usageOption = stats && {
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'item', formatter: '{b}: {c} MHz ({d}%)' },
+    legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
+    series: [{
+      type: 'pie', radius: ['42%', '68%'], center: ['50%', '44%'],
+      label: { color: '#94a3b8', fontSize: 11, formatter: '{b}\n{c} MHz' },
+      data: stats.byUsageType.map((u) => ({
+        name: u.usageType, value: u.bw,
+        itemStyle: { color: USAGE_COLORS[u.usageType as keyof typeof USAGE_COLORS] ?? '#64748b' },
+      })),
+    }],
+  };
 
   return (
-    <div style={{ padding: '48px 48px 32px' }}>
-      <h2 style={{ color: '#94a3b8', fontWeight: 400, fontSize: 14, margin: '0 0 8px', letterSpacing: 2 }}>
-        功能选择
-      </h2>
-      <h1 style={{ color: '#e2e8f0', fontSize: 28, fontWeight: 700, margin: '0 0 28px' }}>
-        工作台
-      </h1>
+    <Spin spinning={loading}>
+      <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* 卫星档案 */}
+        <Card size="small" style={cardStyle} title={
+          <span>
+            {sat?.satelliteName ?? '—'}
+            <Tag style={{ marginLeft: 10 }} color={sat?.statusText === '在轨运营' ? 'green' : 'orange'}>
+              {sat?.statusText ?? '—'}
+            </Tag>
+          </span>
+        }>
+          <Descriptions size="small" column={4} labelStyle={{ color: '#4a6a8a' }}>
+            <Descriptions.Item label="卫星代号">{sat?.satelliteCode}</Descriptions.Item>
+            <Descriptions.Item label="轨位">{sat?.orbitPosition ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="发射时间">{sat?.launchDate ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="寿命">{sat?.designLife ? `${sat.designLife} 年` : '—'}</Descriptions.Item>
+            <Descriptions.Item label="制造商">{sat?.manufacturer ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="平台">{sat?.platform ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="通道组数">{sat?.channelGroupCount ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="矩阵数">{sat?.matrixCount ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="有效载荷" span={2}>
+              <span style={{ whiteSpace: 'pre-line' }}>{sat?.payload ?? '—'}</span>
+            </Descriptions.Item>
+            <Descriptions.Item label="覆盖" span={2}>
+              <span style={{ whiteSpace: 'pre-line' }}>{sat?.coverage ?? '—'}</span>
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
 
-      {sat && <SatelliteProfile sat={sat} />}
+        {/* 指标卡:资源规模 */}
+        <Row gutter={16}>
+          <Col span={6}>
+            <Card size="small" style={cardStyle}>
+              <Statistic title="设计带宽合计" value={stats?.summary.totalDesignBw ?? 0}
+                suffix="MHz" valueStyle={{ color: '#e2e8f0', fontSize: 22 }} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small" style={cardStyle}>
+              <Tooltip title="口径:开关状态为「通」的输入通道带宽合计">
+                <Statistic title="最大带宽(开关通)" value={stats?.usage.maxBw ?? 0}
+                  suffix="MHz" valueStyle={{ color: '#94a3b8', fontSize: 22 }} />
+              </Tooltip>
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small" style={cardStyle}>
+              <Statistic title="已规划带宽" value={stats?.summary.totalPlannedBw ?? 0}
+                suffix="MHz" valueStyle={{ color: '#3b82f6', fontSize: 22 }} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card size="small" style={cardStyle}>
+              <Statistic title="有效分配带宽" value={stats?.allocation.validBw ?? 0}
+                suffix="MHz" valueStyle={{ color: '#22c55e', fontSize: 22 }} />
+            </Card>
+          </Col>
+        </Row>
 
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-        {cards.map((c) => (
-          <div
-            key={c.path}
-            onClick={() => navigate(c.path)}
-            style={{
-              width: 260,
-              padding: 28,
-              background: '#1e293b',
-              border: '1px solid #334155',
-              borderRadius: 12,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              const el = e.currentTarget as HTMLDivElement;
-              el.style.borderColor = c.color;
-              el.style.transform = 'translateY(-4px)';
-              el.style.boxShadow = `0 12px 32px ${c.color}33`;
-            }}
-            onMouseLeave={(e) => {
-              const el = e.currentTarget as HTMLDivElement;
-              el.style.borderColor = '#334155';
-              el.style.transform = 'translateY(0)';
-              el.style.boxShadow = 'none';
-            }}
-          >
-            <div
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 10,
-                background: `${c.color}22`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 22,
-                color: c.color,
-                marginBottom: 16,
-              }}
-            >
-              {c.icon}
-            </div>
-            <div style={{ color: '#e2e8f0', fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
-              {c.title}
-            </div>
-            <div style={{ color: '#64748b', fontSize: 13, lineHeight: 1.6 }}>{c.desc}</div>
-          </div>
-        ))}
+        {/* 资源使用统计(详细):已用 = 实际占用(非空闲)的分配带宽 */}
+        <Card size="small" style={cardStyle} title="资源使用统计">
+          <Row gutter={24} align="middle">
+            <Col span={5}>
+              <Tooltip title="口径:占用-释放余额>0(非空闲)的分配块带宽合计">
+                <Statistic title="已用带宽(实际占用)" value={stats?.usage.occupiedBw ?? 0}
+                  suffix="MHz" valueStyle={{ color: '#f59e0b', fontSize: 22 }} />
+              </Tooltip>
+            </Col>
+            <Col span={5}>
+              <Statistic title="空闲分配带宽(已分配未占用)" value={stats?.usage.idleAllocatedBw ?? 0}
+                suffix="MHz" valueStyle={{ color: '#06b6d4', fontSize: 22 }} />
+            </Col>
+            <Col span={5}>
+              <Statistic title="占用中块数 / 有效分配块"
+                value={stats ? `${stats.usage.occupiedBlocks} / ${stats.allocation.validBlocks}` : '—'}
+                valueStyle={{ color: '#e2e8f0', fontSize: 22 }} />
+            </Col>
+            <Col span={9}>
+              <div style={{ color: '#4a6a8a', fontSize: 12, marginBottom: 6 }}>
+                带宽使用率
+                <span style={{ float: 'right', fontFamily: 'monospace', color: '#94a3b8' }}>
+                  已用 {stats?.usage.occupiedBw ?? 0} / 最大 {stats?.usage.maxBw ?? 0} MHz
+                </span>
+              </div>
+              <Progress
+                percent={stats?.usage.utilization ?? 0}
+                strokeColor={{ '0%': '#3b82f6', '100%': '#f59e0b' }}
+                trailColor="#16263d"
+                format={(p) => <span style={{ color: '#f59e0b' }}>{p}%</span>}
+              />
+              <div style={{ color: '#334155', fontSize: 11, marginTop: 4 }}>
+                口径:最大带宽 = 开关置「通」的通道带宽;已用 = 实际占用(非空闲)的分配带宽
+              </div>
+            </Col>
+          </Row>
+        </Card>
+
+        {/* 图表 */}
+        <Row gutter={16}>
+          <Col span={14}>
+            <Card size="small" style={cardStyle} title="各频段带宽(设计 / 最大 / 规划 / 分配 / 已用)">
+              {bandOption
+                ? <ReactECharts option={bandOption} style={{ height: 280 }} notMerge />
+                : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+            </Card>
+          </Col>
+          <Col span={10}>
+            <Card size="small" style={cardStyle} title="规划用途分布(有效规划块)">
+              {usageOption && stats!.byUsageType.length > 0
+                ? <ReactECharts option={usageOption} style={{ height: 280 }} notMerge />
+                : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无规划数据" />}
+            </Card>
+          </Col>
+        </Row>
+
+        {/* 信标 */}
+        <Card size="small" style={cardStyle} title={`信标(${beacons.length})`}>
+          {beacons.length === 0
+            ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="无信标数据" />
+            : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                {beacons.map((b) => (
+                  <Tag key={b.id} style={{ fontFamily: 'monospace', padding: '4px 10px', fontSize: 12 }}>
+                    {b.band} · {b.polarization} · {b.frequency} MHz
+                  </Tag>
+                ))}
+              </div>
+            )}
+        </Card>
       </div>
-    </div>
+    </Spin>
   );
 }

@@ -46,13 +46,34 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 """
 
 
+def _ensure_database() -> None:
+    """目标库不存在时自动创建(全新部署 / v6 重建场景)。"""
+    conn = pymysql.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=int(os.getenv("DB_PORT", "3306")),
+        user=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASSWORD", ""),
+        charset="utf8mb4",
+        autocommit=True,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"CREATE DATABASE IF NOT EXISTS `{os.getenv('DB_NAME', 'v6')}` "
+                "DEFAULT CHARSET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
+            )
+    finally:
+        conn.close()
+
+
 def _get_conn() -> pymysql.Connection:
+    _ensure_database()
     return pymysql.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=int(os.getenv("DB_PORT", "3306")),
         user=os.getenv("DB_USER", "root"),
         password=os.getenv("DB_PASSWORD", ""),
-        database=os.getenv("DB_NAME", "v5"),
+        database=os.getenv("DB_NAME", "v6"),
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=False,
@@ -71,16 +92,50 @@ def _applied_versions(conn: pymysql.Connection) -> set[str]:
         return {row["version"] for row in cur.fetchall()}
 
 
+def _split_statements(sql_text: str) -> list[str]:
+    """按分号切分 SQL,但忽略单引号字符串字面量内部的分号。
+    (种子数据的文本字段可能含分号,朴素 split 会切坏语句)"""
+    stmts, buf, in_str = [], [], False
+    i, n = 0, len(sql_text)
+    while i < n:
+        ch = sql_text[i]
+        if in_str:
+            buf.append(ch)
+            if ch == "\\" and i + 1 < n:        # 反斜杠转义,连同下一字符
+                buf.append(sql_text[i + 1])
+                i += 2
+                continue
+            if ch == "'":
+                if i + 1 < n and sql_text[i + 1] == "'":  # '' 转义
+                    buf.append("'")
+                    i += 2
+                    continue
+                in_str = False
+        elif ch == "'":
+            in_str = True
+            buf.append(ch)
+        elif ch == ";":
+            stmts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    if buf:
+        stmts.append("".join(buf))
+    # 过滤空语句和纯注释块
+    out = []
+    for raw in stmts:
+        cleaned = re.sub(r"--[^\n]*", "", raw).strip()
+        if cleaned:
+            out.append(raw.strip())
+    return out
+
+
 def _apply(conn: pymysql.Connection, version: str, filepath: str) -> None:
     with open(filepath, encoding="utf-8") as f:
         sql_text = f.read()
 
-    # 按分号分割，过滤空语句和纯注释块
-    stmts = []
-    for raw in sql_text.split(";"):
-        cleaned = re.sub(r"--[^\n]*", "", raw).strip()
-        if cleaned:
-            stmts.append(raw.strip())
+    stmts = _split_statements(sql_text)
 
     with conn.cursor() as cur:
         for stmt in stmts:

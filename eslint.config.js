@@ -18,5 +18,9 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // 数据加载惯用法(effect 内 setLoading(true) 后发请求)与该规则冲突,关闭
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])
